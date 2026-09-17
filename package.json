@@ -1,0 +1,32 @@
+{
+  "name": "catastrophy",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pratyaksh-krishnna/catastrophy.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/pratyaksh-krishnna/catastrophy/issues"
+  },
+  "homepage": "https://github.com/pratyaksh-krishnna/catastrophy#readme",
+  "type": "module",
+  "devDependencies": {
+    "@types/node": "^26.6.1",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.1"
+  },
+  "dependencies": {
+    "ngeohash": "^0.6.4"
+  }
+}
