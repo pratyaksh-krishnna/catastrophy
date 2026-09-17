@@ -1,0 +1,184 @@
+# Review package: f97313e..f87f983
+
+## Commits
+f87f983 fix: satisfy strict typecheck and bind postgres to loopback
+
+## Files changed
+ docker-compose.yml       |  2 +-
+ package-lock.json        |  8 ++++++++
+ package.json             |  1 +
+ src/domain/cells.test.ts | 12 +++++++-----
+ src/domain/score.test.ts |  4 +++-
+ 5 files changed, 20 insertions(+), 7 deletions(-)
+
+## Diff
+diff --git a/docker-compose.yml b/docker-compose.yml
+index 7917f63..cef9e17 100644
+--- a/docker-compose.yml
++++ b/docker-compose.yml
+@@ -1,7 +1,7 @@
+ services:
+   db:
+     image: postgis/postgis:16-3.4
+     environment:
+       POSTGRES_PASSWORD: catastrophy
+       POSTGRES_DB: catastrophy
+-    ports: ["5432:5432"]
++    ports: ["127.0.0.1:5432:5432"]
+diff --git a/package-lock.json b/package-lock.json
+index ed68550..7781aa6 100644
+--- a/package-lock.json
++++ b/package-lock.json
+@@ -5,20 +5,21 @@
+   "requires": true,
+   "packages": {
+     "": {
+       "name": "catastrophy",
+       "version": "1.0.0",
+       "license": "ISC",
+       "dependencies": {
+         "ngeohash": "^0.6.4"
+       },
+       "devDependencies": {
++        "@types/ngeohash": "^0.6.8",
+         "@types/node": "^26.6.1",
+         "typescript": "^7.0.2",
+         "vitest": "^5.0.1"
+       }
+     },
+     "node_modules/@jridgewell/resolve-uri": {
+       "version": "3.1.2",
+       "resolved": "https://registry.npmjs.org/@jridgewell/resolve-uri/-/resolve-uri-3.1.2.tgz",
+       "integrity": "sha512-bRISgCIjP20/tbWSPWMEi54QVPRZExkuD9lJL+UIxUKtwVJA8wW1Trb1jMs1RFXo1CBTNZ/5hpC9QvmKWdopKw==",
+       "dev": true,
+@@ -352,20 +353,27 @@
+       "dev": true,
+       "license": "MIT"
+     },
+     "node_modules/@types/estree": {
+       "version": "1.0.9",
+       "resolved": "https://registry.npmjs.org/@types/estree/-/estree-1.0.9.tgz",
+       "integrity": "sha512-GhdPgy1el4/ImP05X05Uw4cw2/M93BCUmnEvWZNStlCzEKME4Fkk+YpoA5OiHNQmoS7Cafb8Xa3Pya8m1Qrzeg==",
+       "dev": true,
+       "license": "MIT"
+     },
++    "node_modules/@types/ngeohash": {
++      "version": "0.6.8",
++      "resolved": "https://registry.npmjs.org/@types/ngeohash/-/ngeohash-0.6.8.tgz",
++      "integrity": "sha512-A90x3HMwE1yXbWCnd0ztHzv8rAQPjwTzX2diYI/6OrWm/3oairDaehw5WPWJFgZ+8+J/OuF99IbipmMa2le6tQ==",
++      "dev": true,
++      "license": "MIT"
++    },
+     "node_modules/@types/node": {
+       "version": "26.6.1",
+       "resolved": "https://registry.npmjs.org/@types/node/-/node-26.6.1.tgz",
+       "integrity": "sha512-VqGJBMCtdhqkBUCcBLvywI0NJ+KLuVzgNnlBUNFOQjqVxzo2lxLUNg1DSey8+u2u6ktswSAxg+s68QLzWHNOuA==",
+       "dev": true,
+       "license": "MIT",
+       "dependencies": {
+         "undici-types": "~8.9.0"
+       }
+     },
+diff --git a/package.json b/package.json
+index ae9bb23..c75281f 100644
+--- a/package.json
++++ b/package.json
+@@ -15,18 +15,19 @@
+   },
+   "keywords": [],
+   "author": "",
+   "license": "ISC",
+   "bugs": {
+     "url": "https://github.com/pratyaksh-krishnna/catastrophy/issues"
+   },
+   "homepage": "https://github.com/pratyaksh-krishnna/catastrophy#readme",
+   "type": "module",
+   "devDependencies": {
++    "@types/ngeohash": "^0.6.8",
+     "@types/node": "^26.6.1",
+     "typescript": "^7.0.2",
+     "vitest": "^5.0.1"
+   },
+   "dependencies": {
+     "ngeohash": "^0.6.4"
+   }
+ }
+diff --git a/src/domain/cells.test.ts b/src/domain/cells.test.ts
+index 664e8ad..83b6039 100644
+--- a/src/domain/cells.test.ts
++++ b/src/domain/cells.test.ts
+@@ -15,38 +15,40 @@ describe("suppressCells", () => {
+     expect(suppressCells(dense(1), 7)).toEqual([]);
+   });
+ 
+   it("renders nothing below the k threshold", () => {
+     expect(suppressCells(dense(K_SUPPRESSION - 1), 7)).toEqual([]);
+   });
+ 
+   it("renders a cell once k distinct buildings fall inside it", () => {
+     const cells = suppressCells(dense(K_SUPPRESSION), 7);
+     expect(cells.length).toBe(1);
+-    expect(cells[0].buildingCount).toBeGreaterThanOrEqual(K_SUPPRESSION);
++    expect(cells[0]!.buildingCount).toBeGreaterThanOrEqual(K_SUPPRESSION);
+   });
+ 
+   it("merges sparse points upward into a coarser cell rather than dropping them", () => {
+     // Six points spread across separate precision-7 cells but one precision-5 cell.
+     const spread: ReportedPoint[] = Array.from({ length: 6 }, (_, i) => ({
+       buildingId: `s${i}`,
+       lat: 28.63 + i * 0.004,
+       lon: 77.21 + i * 0.004,
+       score: 0.4,
+     }));
+     const cells = suppressCells(spread, 7);
+     expect(cells.length).toBeGreaterThan(0);
+-    expect(cells[0].precision).toBeLessThan(7);
++    expect(cells[0]!.precision).toBeLessThan(7);
+   });
+ 
+   it("counts each building once however many times it appears", () => {
+     const dup = [...dense(K_SUPPRESSION), ...dense(K_SUPPRESSION)];
+     const cells = suppressCells(dup, 7);
+-    expect(cells[0].buildingCount).toBe(K_SUPPRESSION);
++    expect(cells.length).toBeGreaterThan(0);
++    expect(cells[0]!.buildingCount).toBe(K_SUPPRESSION);
+   });
+ 
+   it("gives intensity in 0..1 and never leaks a raw count through it", () => {
+     const cells = suppressCells(dense(20), 7);
+-    expect(cells[0].intensity).toBeGreaterThan(0);
+-    expect(cells[0].intensity).toBeLessThanOrEqual(1);
++    expect(cells.length).toBeGreaterThan(0);
++    expect(cells[0]!.intensity).toBeGreaterThan(0);
++    expect(cells[0]!.intensity).toBeLessThanOrEqual(1);
+   });
+ });
+diff --git a/src/domain/score.test.ts b/src/domain/score.test.ts
+index 517748d..98337a8 100644
+--- a/src/domain/score.test.ts
++++ b/src/domain/score.test.ts
+@@ -5,21 +5,23 @@ const h = (typeId: OpenHazard["typeId"], confidence: number): OpenHazard => ({ t
+ 
+ describe("score", () => {
+   it("is zero with no open hazards", () => {
+     expect(buildingScore([])).toBe(0);
+   });
+ 
+   it("ranks a credible severe hazard above a widely-reported trivial one — ADR-0001", () => {
+     const credibleCrack = h("load_bearing_crack", 0.5);
+     const certainSpalling = h("plaster_spalling", 1.0);
+     expect(hazardRisk(credibleCrack)).toBeGreaterThan(hazardRisk(certainSpalling));
+-    expect(rankHazards([certainSpalling, credibleCrack])[0].typeId).toBe("load_bearing_crack");
++    const ranked = rankHazards([certainSpalling, credibleCrack]);
++    expect(ranked.length).toBeGreaterThan(0);
++    expect(ranked[0]!.typeId).toBe("load_bearing_crack");
+   });
+ 
+   it("scales risk by confidence", () => {
+     expect(hazardRisk(h("load_bearing_crack", 0.2))).toBeLessThan(hazardRisk(h("load_bearing_crack", 0.9)));
+   });
+ 
+   it("bands a quiet building as monitor", () => {
+     expect(alertLevel([h("plaster_spalling", 0.2)])).toBe("monitor");
+   });
+ 
