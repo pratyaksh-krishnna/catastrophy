@@ -22,7 +22,7 @@ describe("suppressCells", () => {
   it("renders a cell once k distinct buildings fall inside it", () => {
     const cells = suppressCells(dense(K_SUPPRESSION), 7);
     expect(cells.length).toBe(1);
-    expect(cells[0].buildingCount).toBeGreaterThanOrEqual(K_SUPPRESSION);
+    expect(cells[0]!.buildingCount).toBeGreaterThanOrEqual(K_SUPPRESSION);
   });
 
   it("merges sparse points upward into a coarser cell rather than dropping them", () => {
@@ -35,18 +35,20 @@ describe("suppressCells", () => {
     }));
     const cells = suppressCells(spread, 7);
     expect(cells.length).toBeGreaterThan(0);
-    expect(cells[0].precision).toBeLessThan(7);
+    expect(cells[0]!.precision).toBeLessThan(7);
   });
 
   it("counts each building once however many times it appears", () => {
     const dup = [...dense(K_SUPPRESSION), ...dense(K_SUPPRESSION)];
     const cells = suppressCells(dup, 7);
-    expect(cells[0].buildingCount).toBe(K_SUPPRESSION);
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells[0]!.buildingCount).toBe(K_SUPPRESSION);
   });
 
   it("gives intensity in 0..1 and never leaks a raw count through it", () => {
     const cells = suppressCells(dense(20), 7);
-    expect(cells[0].intensity).toBeGreaterThan(0);
-    expect(cells[0].intensity).toBeLessThanOrEqual(1);
+    expect(cells.length).toBeGreaterThan(0);
+    expect(cells[0]!.intensity).toBeGreaterThan(0);
+    expect(cells[0]!.intensity).toBeLessThanOrEqual(1);
   });
 });

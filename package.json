@@ -22,6 +22,7 @@
   "homepage": "https://github.com/pratyaksh-krishnna/catastrophy#readme",
   "type": "module",
   "devDependencies": {
+    "@types/ngeohash": "^0.6.8",
     "@types/node": "^26.6.1",
     "typescript": "^7.0.2",
     "vitest": "^5.0.1"

@@ -12,7 +12,9 @@ describe("score", () => {
     const credibleCrack = h("load_bearing_crack", 0.5);
     const certainSpalling = h("plaster_spalling", 1.0);
     expect(hazardRisk(credibleCrack)).toBeGreaterThan(hazardRisk(certainSpalling));
-    expect(rankHazards([certainSpalling, credibleCrack])[0].typeId).toBe("load_bearing_crack");
+    const ranked = rankHazards([certainSpalling, credibleCrack]);
+    expect(ranked.length).toBeGreaterThan(0);
+    expect(ranked[0]!.typeId).toBe("load_bearing_crack");
   });
 
   it("scales risk by confidence", () => {
