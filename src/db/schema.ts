@@ -1,5 +1,15 @@
+import { sql } from "drizzle-orm";
 import {
-  pgTable, uuid, text, timestamp, doublePrecision, jsonb, integer, primaryKey, customType,
+  customType,
+  doublePrecision,
+  integer,
+  jsonb,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+  uniqueIndex,
+  uuid,
 } from "drizzle-orm/pg-core";
 
 /** PostGIS geography(Point,4326). Written with ST_* SQL, read via ST_X/ST_Y. */
@@ -89,15 +99,23 @@ export const escalations = pgTable("escalations", {
   resolvedAt: timestamp("resolved_at", { withTimezone: true }),
 });
 
-export const resolutionClaims = pgTable("resolution_claims", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  hazardId: uuid("hazard_id").notNull().references(() => hazards.id),
-  officeBearerId: uuid("office_bearer_id").notNull().references(() => officeBearers.id),
-  evidenceId: uuid("evidence_id").notNull().references(() => evidence.id),
-  contestUntil: timestamp("contest_until", { withTimezone: true }).notNull(),
-  status: text("status").notNull().default("pending"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
+export const resolutionClaims = pgTable(
+  "resolution_claims",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    hazardId: uuid("hazard_id").notNull().references(() => hazards.id),
+    officeBearerId: uuid("office_bearer_id").notNull().references(() => officeBearers.id),
+    evidenceId: uuid("evidence_id").notNull().references(() => evidence.id),
+    contestUntil: timestamp("contest_until", { withTimezone: true }).notNull(),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("resolution_claims_one_active_per_hazard_idx")
+      .on(table.hazardId)
+      .where(sql`${table.status} IN ('pending', 'disputed')`),
+  ],
+);
 
 export const areaSignals = pgTable("area_signals", {
   id: uuid("id").primaryKey().defaultRandom(),

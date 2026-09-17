@@ -96,6 +96,9 @@ CREATE TABLE resolution_claims (
   status          text NOT NULL DEFAULT 'pending',
   created_at      timestamptz NOT NULL DEFAULT now()
 );
+CREATE UNIQUE INDEX resolution_claims_one_active_per_hazard_idx
+  ON resolution_claims (hazard_id)
+  WHERE status IN ('pending', 'disputed');
 
 -- Located to a cell, never to a Building. Never touches Confidence or Score.
 CREATE TABLE area_signals (
@@ -108,3 +111,5 @@ CREATE TABLE area_signals (
   created_at  timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX area_signals_geohash_idx ON area_signals (geohash);
+
+CREATE EXTENSION IF NOT EXISTS pg_trgm;

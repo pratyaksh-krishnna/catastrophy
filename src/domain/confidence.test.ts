@@ -19,6 +19,15 @@ describe("computeConfidence", () => {
     expect(computeConfidence(many, NOW)).toBeLessThanOrEqual(REPORTER_CAP + 1e-9);
   });
 
+  it("caps a single reporter even when they submit across source classes", () => {
+    const oneReporter = [
+      ev({ reporterId: "r1", sourceClass: "resident_photo" }),
+      ev({ reporterId: "r1", sourceClass: "resident_account" }),
+      ev({ reporterId: "r1", sourceClass: "social_post" }),
+    ];
+    expect(computeConfidence(oneReporter, NOW)).toBeLessThanOrEqual(REPORTER_CAP + 1e-9);
+  });
+
   it("rises with independent reporters", () => {
     const one = computeConfidence([ev({ reporterId: "r1" })], NOW);
     const three = computeConfidence(

@@ -41,4 +41,15 @@ describe("schema", () => {
       db.execute(sql`INSERT INTO hazards (building_id, type_id) VALUES (${b!.id}, 'load_bearing_crack')`),
     ).rejects.toThrow();
   });
+
+  it("has a partial unique index for one active Resolution Claim per Hazard", async () => {
+    const result = await db.execute(sql`
+      SELECT indexdef
+      FROM pg_indexes
+      WHERE schemaname = 'public'
+        AND indexname = 'resolution_claims_one_active_per_hazard_idx'
+    `);
+    expect(result.rows[0]?.indexdef).toMatch(/UNIQUE INDEX/i);
+    expect(result.rows[0]?.indexdef).toMatch(/pending.*disputed/i);
+  });
 });

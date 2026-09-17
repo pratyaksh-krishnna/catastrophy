@@ -1,4 +1,4 @@
-import { severityOf, type HazardTypeId, type Severity } from "./hazard-catalogue.js";
+import { severityOf, type HazardTypeId, type Severity } from "./hazard-catalogue";
 
 export type AlertLevel = "monitor" | "act" | "escalated" | "critical";
 

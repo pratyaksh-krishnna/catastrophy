@@ -57,8 +57,23 @@ export function computeConfidence(evidence: EvidenceRef[], now: Date): number {
     combined = 1 - (1 - combined) * (1 - Math.min(s, REPORTER_CAP));
   }
 
-  const classes = new Set(evidence.map((e) => e.sourceClass));
-  if (classes.size >= 2) combined += (1 - combined) * CROSS_CLASS_BONUS;
+  // Cross-class corroboration only exists when independent Reporters provide
+  // the differing classes. Otherwise one person could exceed REPORTER_CAP by
+  // submitting the same observation in two formats.
+  const reportersByClass = new Map<SourceClass, Set<string>>();
+  for (const item of evidence) {
+    const reporters = reportersByClass.get(item.sourceClass) ?? new Set<string>();
+    reporters.add(item.reporterId);
+    reportersByClass.set(item.sourceClass, reporters);
+  }
+  const classGroups = [...reportersByClass.values()];
+  const independentlyCorroborated = classGroups.some((left, index) =>
+    classGroups.slice(index + 1).some((right) => {
+      if (left.size > 1 || right.size > 1) return true;
+      return left.values().next().value !== right.values().next().value;
+    }),
+  );
+  if (independentlyCorroborated) combined += (1 - combined) * CROSS_CLASS_BONUS;
 
   return Math.min(1, combined);
 }
