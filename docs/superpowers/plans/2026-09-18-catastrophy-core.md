@@ -90,7 +90,7 @@ services:
     environment:
       POSTGRES_PASSWORD: catastrophy
       POSTGRES_DB: catastrophy
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:55432:5432"]
 ```
 
 - [ ] **Step 2: Write the failing test**
@@ -708,8 +708,8 @@ docker compose up -d
 Create `.env.example`:
 
 ```
-DATABASE_URL=postgres://postgres:catastrophy@localhost:5432/catastrophy
-DATABASE_URL_TEST=postgres://postgres:catastrophy@localhost:5432/catastrophy
+DATABASE_URL=postgres://postgres:catastrophy@127.0.0.1:55432/catastrophy
+DATABASE_URL_TEST=postgres://postgres:catastrophy@127.0.0.1:55432/catastrophy
 MODEL=anthropic.claude-opus-5
 AWS_REGION=ap-south-1
 S3_BUCKET=catastrophy-media
