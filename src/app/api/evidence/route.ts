@@ -5,7 +5,7 @@ import {
   type SubmitEvidenceInput,
 } from "../../../api/submit-evidence";
 import type { SourceClass } from "../../../domain/confidence";
-import { REPORTER_COOKIE } from "../../../api/reporter";
+import { REPORTER_COOKIE, signReporterSession, verifyReporterSession } from "../../../api/reporter";
 
 const MAX_MEDIA_BYTES = 12 * 1024 * 1024;
 const ACCEPTED_MEDIA_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
@@ -24,6 +24,10 @@ function requiredNumber(form: FormData, key: string): number {
 
 export async function POST(request: NextRequest) {
   try {
+    const origin = request.headers.get("origin");
+    if (origin && origin !== request.nextUrl.origin) {
+      return NextResponse.json({ error: "Invalid request origin" }, { status: 403 });
+    }
     const form = await request.formData();
     const candidate = form.get("media");
     const file = candidate instanceof File && candidate.size > 0 ? candidate : undefined;
@@ -37,26 +41,35 @@ export async function POST(request: NextRequest) {
     const sourceClass: SourceClass = file ? "resident_photo" : "resident_account";
     const optionalBuildingId = form.get("buildingId");
     const input: SubmitEvidenceInput = {
-      reporterId: request.cookies.get(REPORTER_COOKIE)?.value,
+      reporterId: verifyReporterSession(request.cookies.get(REPORTER_COOKIE)?.value) ?? undefined,
       addressText: requiredText(form, "addressText"),
       note: requiredText(form, "note"),
       sourceClass,
       deviceLocation: { lat: requiredNumber(form, "lat"), lon: requiredNumber(form, "lon") },
+      buildingLocation: {
+        lat: requiredNumber(form, "buildingLat"),
+        lon: requiredNumber(form, "buildingLon"),
+      },
       capturedAt: new Date(),
       ...(typeof optionalBuildingId === "string" && optionalBuildingId.trim()
         ? { buildingId: optionalBuildingId.trim() }
         : {}),
       ...(media ? { media } : {}),
+      ...(file ? { mediaType: file.type as "image/jpeg" | "image/png" | "image/webp" } : {}),
       confirmLocation: form.get("confirmLocation") === "true",
     };
 
     const result = await submitEvidence(input);
-    const { reporterId, ...publicResult } = result;
-    const response = NextResponse.json(publicResult, {
+    // Reporter-facing response contains only their Evidence id and processing
+    // status. The transient Building id is needed solely for a 150 m retry.
+    const response = NextResponse.json(result.needsLocationConfirmation
+      ? { needsLocationConfirmation: true, buildingId: result.buildingId }
+      : { evidenceId: result.evidenceId, status: "processing" }, {
       status: result.needsLocationConfirmation ? 409 : 201,
+      headers: { "Cache-Control": "private, no-store" },
     });
-    if (reporterId) {
-      response.cookies.set(REPORTER_COOKIE, reporterId, {
+    if (result.reporterId) {
+      response.cookies.set(REPORTER_COOKIE, signReporterSession(result.reporterId), {
         httpOnly: true,
         sameSite: "lax",
         secure: process.env.NODE_ENV === "production",

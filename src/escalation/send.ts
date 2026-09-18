@@ -3,7 +3,7 @@ import { sql } from "drizzle-orm";
 import type { AssessmentRecord } from "../db/assessments";
 import { db } from "../db/client";
 import { HAZARD_CATALOGUE, type AuthorityId } from "../domain/hazard-catalogue";
-import { routeAuthorities } from "./routing";
+import { authoritiesNeedingEscalation, type PreviousEscalation } from "./eligibility";
 
 const ses = new SESClient(
   process.env.AWS_REGION ? { region: process.env.AWS_REGION } : {},
@@ -22,26 +22,49 @@ export async function sendEscalation(input: {
     throw new Error("Assessment does not belong to the Building being escalated");
   }
 
-  const authorities = routeAuthorities(input.assessment.ranked);
+  const previous = await db.execute(sql`
+    SELECT DISTINCT ON (authority) authority, snapshot
+    FROM escalations
+    WHERE building_id = ${input.buildingId}
+    ORDER BY authority, sent_at DESC, id DESC
+  `);
+  const authorities = authoritiesNeedingEscalation(
+    input.assessment,
+    previous.rows as unknown as PreviousEscalation[],
+  );
   if (authorities.length === 0) return [];
 
   // Validate delivery configuration before writing anything that claims to be sent.
   const source = requiredEnvironment("SES_FROM");
-  const inbox = requiredEnvironment("ESCALATION_INBOX");
+  const recipients = new Map(authorities.map((authority) => [authority, authorityInbox(authority)]));
   const escalationIds: string[] = [];
   for (const authority of authorities) {
+    const inbox = recipients.get(authority)!;
     const escalationId = await db.transaction(async (tx) => {
       const inserted = await tx.execute(sql`
-        INSERT INTO escalations (building_id, authority, snapshot)
+        INSERT INTO escalations (building_id, authority, snapshot, assessment_generated_at)
         VALUES (
           ${input.buildingId},
           ${authority},
-          ${JSON.stringify(input.assessment)}::jsonb
+          ${JSON.stringify(input.assessment)}::jsonb,
+          ${input.assessment.generatedAt?.toISOString() ?? null}
         )
+        ON CONFLICT (building_id, authority, assessment_generated_at) DO NOTHING
         RETURNING id
       `);
       const id = inserted.rows[0]?.id as string | undefined;
-      if (!id) throw new Error("Failed to create escalation");
+      if (!id) {
+        const existing = await tx.execute(sql`
+          SELECT id FROM escalations
+          WHERE building_id = ${input.buildingId}
+            AND authority = ${authority}
+            AND assessment_generated_at = ${input.assessment.generatedAt?.toISOString() ?? null}
+          LIMIT 1
+        `);
+        const existingId = existing.rows[0]?.id as string | undefined;
+        if (!existingId) throw new Error("Failed to find existing Escalation");
+        return existingId;
+      }
 
       // The insert and delivery share one unit of work so an SES rejection does
       // not leave a database row falsely marked as sent.
@@ -101,6 +124,16 @@ function requiredEnvironment(name: "SES_FROM" | "ESCALATION_INBOX"): string {
   const value = process.env[name];
   if (!value) throw new Error(`${name} is not set`);
   return value;
+}
+
+function authorityInbox(authority: AuthorityId): string {
+  const name = `${authority.toUpperCase()}_ESCALATION_EMAIL`;
+  const configured = process.env[name];
+  if (configured) return configured;
+  // A single demo inbox can collect the hand-filing drafts when authority
+  // mailboxes have not been configured. Production requires direct routing.
+  if (process.env.NODE_ENV !== "production") return requiredEnvironment("ESCALATION_INBOX");
+  throw new Error(`${name} is not set`);
 }
 
 export async function recordExternalTicket(escalationId: string, ticket: string): Promise<void> {

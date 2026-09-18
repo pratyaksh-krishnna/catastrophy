@@ -18,9 +18,11 @@ export interface SubmitEvidenceInput {
   note: string;
   sourceClass: SourceClass;
   deviceLocation: LatLon;
+  buildingLocation?: LatLon | undefined;
   capturedAt: Date;
   buildingId?: string | undefined;
   media?: Buffer | undefined;
+  mediaType?: "image/jpeg" | "image/png" | "image/webp" | undefined;
   confirmLocation?: boolean | undefined;
 }
 
@@ -70,6 +72,8 @@ export async function resolvePseudonymousReporter(candidateId?: string): Promise
 export function validateEvidenceInput(input: SubmitEvidenceInput): void {
   if (!input.addressText.trim()) throw new EvidenceInputError("Building address is required");
   if (!input.note.trim()) throw new EvidenceInputError("Please describe what you observed");
+  if (input.addressText.length > 300) throw new EvidenceInputError("Building address is too long");
+  if (input.note.length > 2_000) throw new EvidenceInputError("Evidence description is too long");
   if (!SOURCE_CLASSES.has(input.sourceClass)) throw new EvidenceInputError("Unsupported source class");
   if (
     !Number.isFinite(input.deviceLocation.lat) ||
@@ -82,6 +86,13 @@ export function validateEvidenceInput(input: SubmitEvidenceInput): void {
     throw new EvidenceInputError("A valid device location is required");
   }
   if (Number.isNaN(input.capturedAt.getTime())) throw new EvidenceInputError("Captured time is invalid");
+  if (input.buildingId && !UUID.test(input.buildingId)) throw new EvidenceInputError("Invalid Building id");
+  if (input.buildingLocation) {
+    const { lat, lon } = input.buildingLocation;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < 28.4 || lat > 28.9 || lon < 76.8 || lon > 77.4) {
+      throw new EvidenceInputError("Pin the Building within the Delhi map area");
+    }
+  }
 }
 
 /**
@@ -91,9 +102,10 @@ export function validateEvidenceInput(input: SubmitEvidenceInput): void {
 export async function submitEvidence(input: SubmitEvidenceInput): Promise<SubmitEvidenceResult> {
   validateEvidenceInput(input);
 
+  const buildingPoint = input.buildingLocation ?? input.deviceLocation;
   const buildingId = input.buildingId ?? (await resolveOrCreateBuilding({
-    lat: input.deviceLocation.lat,
-    lon: input.deviceLocation.lon,
+    lat: buildingPoint.lat,
+    lon: buildingPoint.lon,
     addressText: input.addressText.trim(),
   })).id;
 
@@ -122,7 +134,7 @@ export async function submitEvidence(input: SubmitEvidenceInput): Promise<Submit
   const exifLocation = input.media ? await readExifLocation(input.media) : null;
   const geoAgreement = compareLocations(input.deviceLocation, exifLocation);
   const mediaKeys = input.media
-    ? await storeEvidenceMedia(input.media, `${buildingId}/${crypto.randomUUID()}.jpg`)
+    ? await storeEvidenceMedia(input.media, `${buildingId}/${crypto.randomUUID()}`, input.mediaType ?? "image/jpeg")
     : null;
 
   const classification = await classifyEvidence({

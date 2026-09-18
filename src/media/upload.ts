@@ -20,9 +20,14 @@ export interface StoredMedia {
  * Stores the untouched original for authorities and an EXIF-free derivative
  * for lower-trust audiences. See ADR-0002.
  */
-export async function storeEvidenceMedia(buf: Buffer, keyBase: string): Promise<StoredMedia> {
-  const originalKey = `original/${keyBase}`;
-  const publicKey = `public/${keyBase}`;
+export async function storeEvidenceMedia(
+  buf: Buffer,
+  keyBase: string,
+  originalContentType: "image/jpeg" | "image/png" | "image/webp" = "image/jpeg",
+): Promise<StoredMedia> {
+  const extension = originalContentType === "image/png" ? "png" : originalContentType === "image/webp" ? "webp" : "jpg";
+  const originalKey = `original/${keyBase}.${extension}`;
+  const publicKey = `public/${keyBase}.jpg`;
   const derivative = await stripExif(buf);
   const Bucket = bucket();
 
@@ -32,7 +37,7 @@ export async function storeEvidenceMedia(buf: Buffer, keyBase: string): Promise<
         Bucket,
         Key: originalKey,
         Body: buf,
-        ContentType: "image/jpeg",
+        ContentType: originalContentType,
       }),
     ),
     s3.send(

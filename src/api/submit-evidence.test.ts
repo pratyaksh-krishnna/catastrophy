@@ -75,6 +75,24 @@ describe("submitEvidence", () => {
     expect(confirmed.needsLocationConfirmation).toBe(false);
   });
 
+  it("uses the pinned Building point separately from the device fix", async () => {
+    const input = {
+      ...base(),
+      reporterId: await reporter(),
+      buildingLocation: { lat: 28.54, lon: 77.21 },
+      deviceLocation: { lat: 28.60, lon: 77.30 },
+    };
+    const pending = await submitEvidence(input);
+    expect(pending.needsLocationConfirmation).toBe(true);
+    expect(pending.evidenceId).toBeNull();
+    const location = await db.execute(sql`
+      SELECT ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon
+      FROM buildings WHERE id = ${pending.buildingId}
+    `);
+    expect(Number(location.rows[0]!.lat)).toBeCloseTo(input.buildingLocation.lat);
+    expect(Number(location.rows[0]!.lon)).toBeCloseTo(input.buildingLocation.lon);
+  });
+
   it("queues regeneration instead of building an Assessment in the request", async () => {
     regenerate.mockClear();
     await submitEvidence({ ...base(), reporterId: await reporter() });

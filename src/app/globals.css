@@ -369,6 +369,10 @@ a { color: inherit; }
 .field input:focus, .field textarea:focus { box-shadow: inset 0 0 0 1.5px rgba(32, 92, 75, .52), 0 0 0 4px rgba(32,92,75,.07); transform: translateY(-1px); }
 .field input::placeholder, .field textarea::placeholder { color: #9a9e99; }
 .field > small { display: block; margin: 7px 3px 0; color: #909691; font-size: 9px; line-height: 1.4; }
+.building-pin { position: relative; overflow: hidden; border-radius: 17px; box-shadow: inset 0 0 0 1px rgba(31,48,41,.1); }
+.building-pin-map { width: 100%; height: 250px; background: #d8ddd1; }
+.pin-location-button { position: absolute; z-index: 2; top: 12px; left: 12px; padding: 10px 13px; border: 0; border-radius: 999px; background: #f5f1e8; box-shadow: 0 4px 16px rgba(0,0,0,.18); color: #193f35; font-size: 10px; font-weight: 750; cursor: pointer; }
+.building-pin > small { display: block; padding: 8px 12px; color: #a73f3f; background: #f5f1e8; }
 
 .upload-field {
   position: relative;
@@ -432,6 +436,12 @@ a { color: inherit; }
 .empty-hazards { color: #7c847f; font-size: 12px; }
 .assessment-foot { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding-top: 25px; }
 .assessment-foot p { max-width: 280px; margin: 0; color: #939894; font-size: 9px; line-height: 1.55; }
+.escalation-status { margin-top: 24px; padding: 17px 20px; border-radius: 16px; background: rgba(31,48,41,.055); }
+.escalation-status h3 { margin: 0 0 8px; font-size: 12px; }
+.escalation-status ul { margin: 0; padding-left: 19px; color: #65706a; font-size: 11px; line-height: 1.8; }
+.escalation-action { margin-top: 18px; }
+.escalation-action .submit-button { margin-top: 0; }
+.escalation-action p { color: #a73f3f; font-size: 11px; }
 .secondary-cta { display: inline-flex; flex: 0 0 auto; align-items: center; justify-content: center; min-height: 40px; padding: 0 17px; border-radius: 999px; background: var(--forest); box-shadow: inset 0 1px rgba(255,255,255,.14), 0 8px 24px rgba(21,62,52,.14); color: white; font-size: 10px; font-weight: 750; text-decoration: none; transition: transform 600ms var(--spring), opacity 600ms var(--spring); }
 .secondary-cta:hover { transform: translateY(-2px); opacity: .86; }
 
@@ -441,6 +451,8 @@ a { color: inherit; }
 .pending-card h1 { font-size: clamp(42px,6vw,72px); }
 .pending-card h1 em { color: var(--forest-light); }
 .pending-card p { max-width: 530px; margin: 27px auto 31px; color: #707873; font-size: 14px; line-height: 1.7; }
+.status-home-link { display: block; margin-top: 20px; color: #426057; font-size: 11px; }
+.pending-card .receipt-id { overflow-wrap: anywhere; color: #426057; font-family: monospace; font-size: 11px; }
 
 .reveal { animation: reveal-up 1050ms var(--spring) both; }
 .reveal--one { animation-delay: 80ms; }

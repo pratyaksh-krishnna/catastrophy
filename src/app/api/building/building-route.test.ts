@@ -5,7 +5,7 @@ import { resolveOrCreateBuilding } from "../../../db/buildings.js";
 import { db, pool } from "../../../db/client.js";
 import { buildingDetail } from "./detail.js";
 import { GET } from "./[id]/route.js";
-import { REPORTER_COOKIE } from "../../../api/reporter.js";
+import { REPORTER_COOKIE, signReporterSession } from "../../../api/reporter.js";
 
 afterAll(async () => { await pool.end(); });
 
@@ -43,7 +43,7 @@ describe("buildingDetail", () => {
     expect(await buildingDetail(building.id)).toBeNull();
   });
 
-  it("conceals exact detail unless the Reporter owns Evidence for the Building", async () => {
+  it("conceals exact detail from a Reporter until residency is approved", async () => {
     const tag = `P${Math.random().toString(36).slice(2, 8)}`;
     const building = await resolveOrCreateBuilding({
       lat: 28.70 + Math.random() * 0.01,
@@ -70,9 +70,29 @@ describe("buildingDetail", () => {
       INSERT INTO evidence (building_id, reporter_id, source_class, note, captured_at)
       VALUES (${building.id}, ${reporterId}, 'resident_account', 'observed crack', now())
     `);
-    const allowed = await GET(
+    const stillDenied = await GET(
+      new NextRequest(`http://localhost/api/building/${building.id}`, {
+        headers: { Cookie: `${REPORTER_COOKIE}=${signReporterSession(reporterId)}` },
+      }),
+      { params: Promise.resolve({ id: building.id }) },
+    );
+    expect(stillDenied.status).toBe(404);
+
+    await db.execute(sql`
+      INSERT INTO building_residents (building_id, reporter_id, approved_at)
+      VALUES (${building.id}, ${reporterId}, now())
+    `);
+    const unsigned = await GET(
       new NextRequest(`http://localhost/api/building/${building.id}`, {
         headers: { Cookie: `${REPORTER_COOKIE}=${reporterId}` },
+      }),
+      { params: Promise.resolve({ id: building.id }) },
+    );
+    expect(unsigned.status).toBe(404);
+
+    const allowed = await GET(
+      new NextRequest(`http://localhost/api/building/${building.id}`, {
+        headers: { Cookie: `${REPORTER_COOKIE}=${signReporterSession(reporterId)}` },
       }),
       { params: Promise.resolve({ id: building.id }) },
     );

@@ -165,7 +165,7 @@ export function PublicHeatmap() {
       <div className="map-label map-label--top">
         <span className={`live-dot live-dot--${state}`} aria-hidden="true" />
         {state === "loading" && "Reading the city"}
-        {state === "ready" && "Live area signals"}
+        {state === "ready" && "Live Building heat"}
         {state === "empty" && "No publishable signal here"}
         {state === "error" && "Map signal unavailable"}
       </div>

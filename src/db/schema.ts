@@ -45,6 +45,17 @@ export const buildings = pgTable("buildings", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Residency is granted by manual review, never by filing Evidence. */
+export const buildingResidents = pgTable(
+  "building_residents",
+  {
+    buildingId: uuid("building_id").notNull().references(() => buildings.id),
+    reporterId: uuid("reporter_id").notNull().references(() => reporters.id),
+    approvedAt: timestamp("approved_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.buildingId, table.reporterId] })],
+);
+
 export const evidence = pgTable("evidence", {
   id: uuid("id").primaryKey().defaultRandom(),
   buildingId: uuid("building_id").notNull().references(() => buildings.id),
@@ -87,17 +98,25 @@ export const assessments = pgTable("assessments", {
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const escalations = pgTable("escalations", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  buildingId: uuid("building_id").notNull().references(() => buildings.id),
-  authority: text("authority").notNull(),
-  snapshot: jsonb("snapshot").notNull(),
-  status: text("status").notNull().default("sent"),
-  externalTicket: text("external_ticket"),
-  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
-  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
-  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
-});
+export const escalations = pgTable(
+  "escalations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    buildingId: uuid("building_id").notNull().references(() => buildings.id),
+    authority: text("authority").notNull(),
+    snapshot: jsonb("snapshot").notNull(),
+    assessmentGeneratedAt: timestamp("assessment_generated_at", { withTimezone: true }),
+    status: text("status").notNull().default("sent"),
+    externalTicket: text("external_ticket"),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("escalations_one_per_assessment_authority_idx")
+      .on(table.buildingId, table.authority, table.assessmentGeneratedAt),
+  ],
+);
 
 export const resolutionClaims = pgTable(
   "resolution_claims",

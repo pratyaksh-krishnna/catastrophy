@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { REPORTER_COOKIE } from "../../../api/reporter";
-import { buildingDetail, reporterCanAccessBuilding } from "../../api/building/detail";
+import { REPORTER_COOKIE, verifyReporterSession } from "../../../api/reporter";
+import { buildingDetail, officeBearerForBuilding, reporterCanAccessBuilding } from "../../api/building/detail";
+import { EscalateButton } from "./escalate-button";
 
 export const metadata: Metadata = { title: "Building Assessment" };
 
@@ -17,7 +18,7 @@ const ACTION_COPY = {
 export default async function BuildingPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const cookieStore = await cookies();
-  const reporterId = cookieStore.get(REPORTER_COOKIE)?.value;
+  const reporterId = verifyReporterSession(cookieStore.get(REPORTER_COOKIE)?.value);
   if (!reporterId || !(await reporterCanAccessBuilding(reporterId, id))) notFound();
   const detail = await buildingDetail(id);
 
@@ -70,10 +71,24 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
                 ))}
               </ol>
             ) : <p className="empty-hazards">No open Hazards are included in this Assessment.</p>}
+            {detail.escalations.length > 0 && (
+              <section className="escalation-status" aria-label="Authority response status">
+                <h3>Authority response</h3>
+                <ul>{detail.escalations.map((escalation) => (
+                  <li key={escalation.authority}>
+                    <strong>{escalation.authority.toUpperCase()}</strong>: {escalation.status}
+                    {escalation.externalTicket && <> · Ticket {escalation.externalTicket}</>}
+                  </li>
+                ))}</ul>
+              </section>
+            )}
             <div className="assessment-foot">
               <p>Assessment changes replace the previous version wholesale, keeping the next action clear.</p>
               <Link className="secondary-cta" href="/report">Add fresh Evidence</Link>
             </div>
+            {(await officeBearerForBuilding(reporterId, id)) && detail.needsEscalation && (detail.alertLevel === "escalated" || detail.alertLevel === "critical") && (
+              <EscalateButton buildingId={id} />
+            )}
           </article>
         </div>
       </section>
