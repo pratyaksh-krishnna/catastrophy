@@ -26,8 +26,16 @@ describe("buildingDetail", () => {
         narrative = EXCLUDED.narrative,
         ranked = EXCLUDED.ranked
     `);
+    const reporter = await db.execute(sql`
+      INSERT INTO reporters (pseudonym) VALUES ('detail tester') RETURNING id
+    `);
+    const reporterId = reporter.rows[0]!.id as string;
+    await db.execute(sql`
+      INSERT INTO building_residents (building_id, reporter_id, approved_at)
+      VALUES (${building.id}, ${reporterId}, now())
+    `);
 
-    const detail = await buildingDetail(building.id);
+    const detail = await buildingDetail(reporterId, building.id);
     expect(detail!.alertLevel).toBe("escalated");
     expect(detail).not.toHaveProperty("score");
     expect(JSON.stringify(detail)).not.toContain("0.77");
@@ -40,7 +48,15 @@ describe("buildingDetail", () => {
       lon: 77.18,
       addressText: `${tag} Marg`,
     });
-    expect(await buildingDetail(building.id)).toBeNull();
+    const reporter = await db.execute(sql`
+      INSERT INTO reporters (pseudonym) VALUES ('pending detail tester') RETURNING id
+    `);
+    const reporterId = reporter.rows[0]!.id as string;
+    await db.execute(sql`
+      INSERT INTO building_residents (building_id, reporter_id, approved_at)
+      VALUES (${building.id}, ${reporterId}, now())
+    `);
+    expect(await buildingDetail(reporterId, building.id)).toBeNull();
   });
 
   it("conceals exact detail from a Reporter until residency is approved", async () => {
@@ -59,6 +75,12 @@ describe("buildingDetail", () => {
       INSERT INTO reporters (pseudonym) VALUES ('private tester') RETURNING id
     `);
     const reporterId = reporter.rows[0]!.id as string;
+    const stranger = await db.execute(sql`
+      INSERT INTO reporters (pseudonym) VALUES ('private stranger') RETURNING id
+    `);
+    const strangerId = stranger.rows[0]!.id as string;
+
+    expect(await buildingDetail(reporterId, building.id)).toBeNull();
 
     const denied = await GET(
       new NextRequest(`http://localhost/api/building/${building.id}`),
@@ -77,11 +99,14 @@ describe("buildingDetail", () => {
       { params: Promise.resolve({ id: building.id }) },
     );
     expect(stillDenied.status).toBe(404);
+    expect(await buildingDetail(reporterId, building.id)).toBeNull();
 
     await db.execute(sql`
       INSERT INTO building_residents (building_id, reporter_id, approved_at)
       VALUES (${building.id}, ${reporterId}, now())
     `);
+    expect(await buildingDetail(strangerId, building.id)).toBeNull();
+    expect((await buildingDetail(reporterId, building.id))?.addressText).toBe(`${tag} Lane`);
     const unsigned = await GET(
       new NextRequest(`http://localhost/api/building/${building.id}`, {
         headers: { Cookie: `${REPORTER_COOKIE}=${reporterId}` },

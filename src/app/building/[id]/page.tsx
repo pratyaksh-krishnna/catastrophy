@@ -20,7 +20,7 @@ export default async function BuildingPage({ params }: { params: Promise<{ id: s
   const cookieStore = await cookies();
   const reporterId = verifyReporterSession(cookieStore.get(REPORTER_COOKIE)?.value);
   if (!reporterId || !(await reporterCanAccessBuilding(reporterId, id))) notFound();
-  const detail = await buildingDetail(id);
+  const detail = await buildingDetail(reporterId, id);
 
   if (!detail) {
     return (

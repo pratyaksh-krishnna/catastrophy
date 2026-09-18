@@ -2,7 +2,7 @@
 
 Catastrophy is a Delhi building-safety demo. A Reporter pins a Building and submits Evidence. Bedrock classifies it into a closed Hazard Type catalogue; Inngest generates an Assessment. Approved residents and Office-bearers can see the Assessment. An approved Office-bearer can send an Escalation to the responsible authority. The public map exposes only k-suppressed heat cells.
 
-The [specification](docs/SPEC.md), [vocabulary](CONTEXT.md), and [architecture decisions](docs/adr/) define the intended behavior. The [core plan](docs/superpowers/plans/2026-09-18-catastrophy-core.md) defines the implemented demo scope. External ingestion and Area Signal feeds are deferred in that plan.
+The [specification](docs/SPEC.md), [vocabulary](CONTEXT.md), and [architecture decisions](docs/adr/) define the intended behavior. The [core plan](docs/superpowers/plans/2026-09-18-catastrophy-core.md) defines the implemented demo scope. The [code review and work register](docs/CODE_REVIEW_2026-09-18.md) tracks findings and next steps across contributors. External ingestion and Area Signal feeds are deferred in that plan.
 
 ## Local setup
 

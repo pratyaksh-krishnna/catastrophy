@@ -41,7 +41,9 @@ export async function approvedBuildingForEvidence(reporterId: string, evidenceId
       AND (
         EXISTS (
           SELECT 1 FROM building_residents r
-          WHERE r.building_id = b.id AND r.reporter_id = e.reporter_id
+          WHERE r.building_id = b.id
+            AND r.reporter_id = e.reporter_id
+            AND r.approved_at IS NOT NULL
         )
         OR EXISTS (
           SELECT 1 FROM office_bearers ob

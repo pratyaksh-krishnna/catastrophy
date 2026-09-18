@@ -28,7 +28,9 @@ export async function reporterCanAccessBuilding(reporterId: string, buildingId: 
       AND (
         EXISTS (
           SELECT 1 FROM building_residents r
-          WHERE r.building_id = b.id AND r.reporter_id = ${reporterId}
+          WHERE r.building_id = b.id
+            AND r.reporter_id = ${reporterId}
+            AND r.approved_at IS NOT NULL
         )
         OR EXISTS (
           SELECT 1 FROM office_bearers ob
@@ -62,8 +64,9 @@ function supportLabel(confidence: number): SupportLabel {
   return "single unconfirmed report";
 }
 
-/** Resident-facing projection. Internal Score is intentionally absent. */
-export async function buildingDetail(buildingId: string): Promise<BuildingDetail | null> {
+/** Authorized resident-facing projection. Internal Score is intentionally absent. */
+export async function buildingDetail(reporterId: string, buildingId: string): Promise<BuildingDetail | null> {
+  if (!(await reporterCanAccessBuilding(reporterId, buildingId))) return null;
   const assessment = await getAssessment(buildingId);
   if (!assessment) return null;
 
