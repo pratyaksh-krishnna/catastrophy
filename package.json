@@ -8,6 +8,7 @@
   },
   "scripts": {
     "dev": "next dev",
+    "dev:inngest": "npx --yes --ignore-scripts=false inngest-cli@1.45.1 dev --no-discovery -u http://localhost:3000/api/inngest",
     "build": "next build",
     "start": "next start",
     "test": "vitest run",

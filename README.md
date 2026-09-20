@@ -6,7 +6,7 @@ The [specification](docs/SPEC.md), [vocabulary](CONTEXT.md), and [architecture d
 
 ## Local setup
 
-Requires Node 20+, Docker with PostGIS, AWS credentials for Bedrock/S3/SES, and an Inngest account or local dev server.
+Requires Node 20+, Docker with PostGIS, AWS credentials for Bedrock/SES, and an Inngest account or local dev server. Production photo uploads also require S3.
 
 ```sh
 npm ci
@@ -17,7 +17,11 @@ npm run db:migrate:test
 npm run dev
 ```
 
-Replace the placeholder values in `.env`, especially `MODEL`, `REPORTER_SESSION_SECRET` (at least 32 random characters), `S3_BUCKET`, `SES_FROM`, and the three authority email addresses. `MODEL` must be a Bedrock Converse model enabled in the selected AWS region. Set `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` for a deployed Inngest app, with `/api/inngest` as its serve URL. A local Inngest dev server must target that route while the Next.js app is running. Without Bedrock, S3, and Inngest configuration, Evidence cannot complete the full Assessment flow; text-only Evidence does not need S3.
+In a second terminal, run `npm run dev:inngest` before submitting Evidence. The app's
+`INNGEST_DEV=1` setting sends assessment events to this local server on port 8288;
+without it, Evidence is saved but Assessment generation remains pending in the outbox.
+
+Replace the placeholder values in `.env`, especially `MODEL`, `REPORTER_SESSION_SECRET` (at least 32 random characters), `SES_FROM`, and the three authority email addresses. `MODEL` must be a Bedrock Converse model enabled in the selected AWS region. Set `INNGEST_EVENT_KEY` and `INNGEST_SIGNING_KEY` for a deployed Inngest app, with `/api/inngest` as its serve URL. A local Inngest dev server must target that route while the Next.js app is running. During `next dev`, photo originals and EXIF-free derivatives are kept privately under the ignored `.local-media/` directory, so local test submissions do not need S3. Production photo uploads require a real `S3_BUCKET`. Bedrock and Inngest are still needed for the full Assessment flow.
 
 The migration script applies `drizzle/*.sql` in order and checks their checksums. If a database already has the original `0000_init.sql` schema but no migration ledger, verify that schema first, then run `BASELINE_EXISTING_SCHEMA=1 npm run db:migrate` once. Fresh Docker databases do not need this setting.
 

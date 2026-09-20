@@ -75,6 +75,22 @@ describe("submitEvidence", () => {
     expect(confirmed.needsLocationConfirmation).toBe(false);
   });
 
+  it("accepts a distant device fix during local development", async () => {
+    vi.stubEnv("NODE_ENV", "development");
+    try {
+      const result = await submitEvidence({
+        ...base(),
+        reporterId: await reporter(),
+        buildingLocation: { lat: 28.54, lon: 77.21 },
+        deviceLocation: { lat: 19.08, lon: 72.88 },
+      });
+      expect(result.needsLocationConfirmation).toBe(false);
+      expect(result.evidenceId).toBeTruthy();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
   it("uses the pinned Building point separately from the device fix", async () => {
     const input = {
       ...base(),

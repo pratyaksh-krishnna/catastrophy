@@ -4,7 +4,11 @@ import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import ngeohash from "ngeohash";
-import { buildSignalPopupHtml, type PublicSignalCell } from "./signal-cells";
+import {
+  buildSignalPopupHtml,
+  type PublicSignalCell,
+  type SignalCellProperties,
+} from "./signal-cells";
 
 interface PublicCell {
   geohash: string;
@@ -68,15 +72,23 @@ function signalFeatureCollection(cells: PublicSignalCell[]) {
 export function PublicHeatmap() {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
-  const popupRef = useRef<maplibregl.Popup | null>(null);
+  const dockRef = useRef<HTMLElement>(null);
+  const expandRef = useRef<HTMLButtonElement>(null);
   const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
   const [signalsVisible, setSignalsVisible] = useState(true);
+  const [expanded, setExpanded] = useState(false);
+  // The signal cell being read. It is held here rather than in a map popup so
+  // the account stays in one place at the edge of the map, clear of the cell
+  // it describes and large enough to read.
+  const [activeSignal, setActiveSignal] = useState<SignalCellProperties | null>(null);
   const signalsVisibleRef = useRef(signalsVisible);
+  const expandedRef = useRef(expanded);
 
-  // Kept in a ref so the mount effect below (which only runs once) can read
-  // the latest toggle value at the moment the signal layers are first
-  // created, without needing map setup to depend on `signalsVisible`.
+  // Kept in refs so the mount effect below (which only runs once) can read
+  // the latest values at the moment the signal layers and map handlers are
+  // first created, without needing map setup to depend on them.
   signalsVisibleRef.current = signalsVisible;
+  expandedRef.current = expanded;
 
   // Applies toggle changes to already-created layers. Reading the Building
   // heat layer is untouched by this — it has no visibility toggle.
@@ -90,9 +102,40 @@ export function PublicHeatmap() {
       }
     }
     if (!signalsVisible) {
-      popupRef.current?.remove();
+      setActiveSignal(null);
     }
   }, [signalsVisible]);
+
+  // Full screen is a CSS state rather than the Fullscreen API, so the map keeps
+  // its own overlays and the page underneath keeps its scroll position. The
+  // body class lets the shell drop the bezel tilt: a transformed ancestor would
+  // otherwise become the containing block for the fixed map stage.
+  useEffect(() => {
+    if (!expanded) return;
+    document.body.classList.add("map-expanded");
+    expandRef.current?.focus({ preventScroll: true });
+    return () => {
+      document.body.classList.remove("map-expanded");
+    };
+  }, [expanded]);
+
+  // A signal opened by clicking the map takes focus, so the panel can be read
+  // and its source links reached from the keyboard.
+  useEffect(() => {
+    if (activeSignal) dockRef.current?.focus({ preventScroll: true });
+  }, [activeSignal]);
+
+  // Escape closes the reading panel first, then leaves full screen.
+  useEffect(() => {
+    if (!expanded && !activeSignal) return;
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape") return;
+      if (activeSignal) setActiveSignal(null);
+      else setExpanded(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [expanded, activeSignal]);
 
   useEffect(() => {
     if (!container.current) return;
@@ -140,6 +183,20 @@ export function PublicHeatmap() {
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
     map.addControl(new maplibregl.AttributionControl({ compact: true }), "bottom-left");
+
+    // Clicking the map surface opens the full-screen view. Dragging the map
+    // never reaches here — MapLibre withholds `click` once the pointer moves
+    // past its drag tolerance — and a click that lands on a signal marker
+    // belongs to the reading panel instead.
+    map.on("click", (event) => {
+      if (expandedRef.current) return;
+      const signalLayers = map.getLayer(SIGNAL_CORE_LAYER_ID) ? [SIGNAL_CORE_LAYER_ID] : [];
+      if (signalLayers.length > 0 &&
+        map.queryRenderedFeatures(event.point, { layers: signalLayers }).length > 0) {
+        return;
+      }
+      setExpanded(true);
+    });
 
     let abortController: AbortController | undefined;
 
@@ -330,17 +387,11 @@ export function PublicHeatmap() {
                 // value should simply leave the popup without source cards.
               }
             }
-            popupRef.current?.remove();
-            popupRef.current = new maplibregl.Popup({ closeButton: true, maxWidth: "340px" })
-              .setLngLat(event.lngLat)
-              .setHTML(
-                buildSignalPopupHtml({
-                  signalCount: Number(properties.signalCount ?? 0),
-                  summary: properties.summary ?? null,
-                  sources,
-                } as Parameters<typeof buildSignalPopupHtml>[0]),
-              )
-              .addTo(map);
+            setActiveSignal({
+              signalCount: Number(properties.signalCount ?? 0),
+              summary: properties.summary ?? null,
+              sources,
+            } as SignalCellProperties);
           });
           map.on("mouseenter", SIGNAL_CORE_LAYER_ID, () => {
             map.getCanvas().style.cursor = "pointer";
@@ -363,22 +414,43 @@ export function PublicHeatmap() {
     return () => {
       abortController?.abort();
       signalsAbortController?.abort();
-      popupRef.current?.remove();
       map.remove();
       mapRef.current = null;
     };
   }, []);
 
+  const stageClass = [
+    "map-stage",
+    expanded ? "map-stage--expanded" : "",
+    activeSignal ? "map-stage--reading" : "",
+  ].filter(Boolean).join(" ");
+
   return (
-    <div className="map-stage" aria-label="Privacy-preserving map of Delhi building-safety signals">
+    <div className={stageClass} aria-label="Privacy-preserving map of Delhi building-safety signals">
       <div ref={container} className="map-canvas" />
       <div className="map-scrim" aria-hidden="true" />
-      <div className="map-label map-label--top">
-        <span className={`live-dot live-dot--${state}`} aria-hidden="true" />
-        {state === "loading" && "Reading the city"}
-        {state === "ready" && "Live Building heat"}
-        {state === "empty" && "No publishable signal here"}
-        {state === "error" && "Map signal unavailable"}
+      <div className="map-topbar">
+        <div className="map-label map-label--top">
+          <span className={`live-dot live-dot--${state}`} aria-hidden="true" />
+          {state === "loading" && "Reading the city"}
+          {state === "ready" && "Live Building heat"}
+          {state === "empty" && "No publishable signal here"}
+          {state === "error" && "Map signal unavailable"}
+        </div>
+        <button
+          ref={expandRef}
+          className="map-expand"
+          type="button"
+          aria-pressed={expanded}
+          onClick={() => setExpanded((open) => !open)}
+        >
+          <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            {expanded
+              ? <path d="M10 4v6H4M14 20v-6h6M10 10 4 4M14 14l6 6" />
+              : <path d="M4 10V4h6M20 14v6h-6M4 4l6 6M20 20l-6-6" />}
+          </svg>
+          {expanded ? "Exit full screen" : "Full screen"}
+        </button>
       </div>
       <div className="map-privacy-note">
         <span className="privacy-mark" aria-hidden="true">⌁</span>
@@ -407,6 +479,28 @@ export function PublicHeatmap() {
           <span>{signalsVisible ? "Area signals shown" : "Area signals hidden"}</span>
         </button>
       </aside>
+      {activeSignal && (
+        <aside ref={dockRef} className="signal-dock" tabIndex={-1} aria-label="Area signal detail">
+          <header className="signal-dock-head">
+            <span className="signal-dock-kicker">Area signal</span>
+            <button
+              className="signal-dock-close"
+              type="button"
+              onClick={() => setActiveSignal(null)}
+              aria-label="Close area signal"
+            >
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </header>
+          {/* buildSignalPopupHtml() escapes every value it renders: this is the
+              same summary, count and source markup the map popup carried, docked
+              at the edge of the map where it can be read in full. */}
+          <div
+            className="signal-dock-body"
+            dangerouslySetInnerHTML={{ __html: buildSignalPopupHtml(activeSignal) }}
+          />
+        </aside>
+      )}
       <div className="map-intensity" aria-label="Heat intensity legend">
         <span>Lower</span>
         <i aria-hidden="true" />

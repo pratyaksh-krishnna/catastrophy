@@ -114,7 +114,10 @@ export async function submitEvidence(input: SubmitEvidenceInput): Promise<Submit
     input.deviceLocation.lat,
     input.deviceLocation.lon,
   );
-  const needsLocationConfirmation = distance > LOCATION_CONFIRM_RADIUS_M;
+  // Local development can exercise the Delhi reporting flow from elsewhere.
+  // Keep the distance check and confirmation in test/production environments.
+  const needsLocationConfirmation =
+    process.env.NODE_ENV !== "development" && distance > LOCATION_CONFIRM_RADIUS_M;
 
   // Stop before media storage, model calls, or Evidence/Hazard writes. A second,
   // explicit request is required to confirm the distant claimed Building.
