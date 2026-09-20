@@ -23,6 +23,7 @@ export interface AssessmentRecord {
   alertLevel: AlertLevel;
   narrative: string;
   ranked: OpenHazard[];
+  generatedAt?: Date;
 }
 
 interface EvidenceRow {
@@ -104,7 +105,7 @@ export async function replaceAssessment(record: AssessmentRecord): Promise<void>
 
 export async function getAssessment(buildingId: string): Promise<AssessmentRecord | null> {
   const result = await db.execute(sql`
-    SELECT building_id, score, alert_level, narrative, ranked
+    SELECT building_id, score, alert_level, narrative, ranked, generated_at
     FROM assessments
     WHERE building_id = ${buildingId}
   `);
@@ -117,5 +118,6 @@ export async function getAssessment(buildingId: string): Promise<AssessmentRecor
     alertLevel: row.alert_level as AlertLevel,
     narrative: row.narrative as string,
     ranked: row.ranked as OpenHazard[],
+    generatedAt: new Date(row.generated_at as Date | string),
   };
 }

@@ -2,11 +2,13 @@
 
 import Link from "next/link";
 import { useRef, useState, type FormEvent } from "react";
+import { BuildingPin } from "./building-pin";
 
 type SubmitState = "idle" | "locating" | "submitting" | "success" | "confirm" | "error";
 
 interface EvidenceResponse {
   buildingId?: string;
+  evidenceId?: string;
   needsLocationConfirmation?: boolean;
   error?: string;
 }
@@ -25,12 +27,15 @@ export default function ReportPage() {
   const [message, setMessage] = useState("");
   const [fileName, setFileName] = useState("");
   const [pendingBuildingId, setPendingBuildingId] = useState<string | null>(null);
+  const [pin, setPin] = useState<{ lat: number; lon: number } | null>(null);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (state === "locating" || state === "submitting") return;
+    const formElement = event.currentTarget;
 
     try {
+      if (!pin) throw new Error("Pin the Building on the map before submitting.");
       if (!("geolocation" in navigator)) throw new Error("This browser cannot share a location.");
       setState("locating");
       setMessage("Locating you securely…");
@@ -42,10 +47,12 @@ export default function ReportPage() {
         });
       });
 
-      const form = new FormData(event.currentTarget);
+      const form = new FormData(formElement);
       const file = form.get("media");
       form.set("lat", String(position.coords.latitude));
       form.set("lon", String(position.coords.longitude));
+      form.set("buildingLat", String(pin.lat));
+      form.set("buildingLon", String(pin.lon));
       // Source Class is intentionally derived again by the server.
       if (pendingBuildingId) {
         form.set("buildingId", pendingBuildingId);
@@ -66,12 +73,13 @@ export default function ReportPage() {
 
       setState("success");
       setPendingBuildingId(null);
-      setMessage("Evidence received. Assessment is now happening safely in the background.");
+      setMessage("Evidence received. You can follow its processing status privately.");
       formRef.current?.reset();
       setFileName("");
+      if (body.evidenceId) window.location.assign(`/evidence/${body.evidenceId}`);
     } catch (error) {
       setState("error");
-      if (error instanceof GeolocationPositionError) {
+      if (typeof GeolocationPositionError !== "undefined" && error instanceof GeolocationPositionError) {
         setMessage("Location access is needed to place this Evidence. Your exact location is never shown publicly.");
       } else {
         setMessage(error instanceof Error ? error.message : "Something went wrong. Please try again.");
@@ -118,8 +126,14 @@ export default function ReportPage() {
 
             <label className="field">
               <span>Building address</span>
-              <input name="addressText" autoComplete="street-address" placeholder="e.g. C-14, Lajpat Nagar II" maxLength={300} required />
+              <input name="addressText" autoComplete="street-address" placeholder="e.g. C-14, Lajpat Nagar II" maxLength={300} required onChange={() => setPendingBuildingId(null)} />
             </label>
+
+            <div className="field">
+              <span>Pin the Building</span>
+              <BuildingPin value={pin} onChange={(point) => { setPin(point); setPendingBuildingId(null); }} />
+              <small>{pin ? `Pinned at ${pin.lat.toFixed(5)}, ${pin.lon.toFixed(5)}` : "Tap the Building on the map, or use your current location."}</small>
+            </div>
 
             <label className="field">
               <span>What did you observe?</span>

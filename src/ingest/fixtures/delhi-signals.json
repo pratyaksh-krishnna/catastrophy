@@ -1,0 +1,72 @@
+[
+  {
+    "sourceId": "https://news.example.com/delhi-laxmi-nagar-collapse-sep2026",
+    "text": "A residential building in Laxmi Nagar showed signs of structural failure today. Engineers reported that the main columns have begun to show significant cracks, raising safety concerns for the 45 residents living in the structure.",
+    "occurredAt": "2026-09-15T09:30:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/karol-bagh-columns-sep2026",
+    "text": "Residents of Karol Bagh raised alarms about cracked columns in their apartment complex. Building inspectors were called to assess the damage, which appears to have developed over several months.",
+    "occurredAt": "2026-09-16T14:15:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/shahdara-illegal-floors-sep2026",
+    "text": "Authorities discovered multiple illegal floors added to a building in Shahdara without proper permits or structural reinforcement. The owner faces potential fines and the structure has been flagged for enforcement action.",
+    "occurredAt": "2026-09-17T11:45:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/seelampur-waterlogging-sep2026",
+    "text": "Heavy rains have caused severe waterlogging in Seelampur, with water seeping into the basement levels of several residential buildings. Structural engineers warn that prolonged water exposure is weakening the foundations.",
+    "occurredAt": "2026-09-14T16:20:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/chandni-chowk-leaning-wall-sep2026",
+    "text": "A prominent merchant reported that a structural wall in Chandni Chowk has begun to lean at an alarming angle. Local officials have begun an investigation into whether the historic building requires immediate reinforcement.",
+    "occurredAt": "2026-09-13T10:00:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/laxmi-nagar-extension-sep2026",
+    "text": "Laxmi Nagar residents are concerned about an unauthorized extension to a neighboring building. The structure appears to be built without proper approval and is straining the walls of adjacent properties.",
+    "occurredAt": "2026-09-12T13:30:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/east-delhi-hazard-sep2026",
+    "text": "East Delhi district officials issued a statement about deteriorating building conditions affecting multiple neighborhoods. A comprehensive inspection has been ordered to identify structures requiring immediate repairs.",
+    "occurredAt": "2026-09-18T08:45:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/south-delhi-structural-sep2026",
+    "text": "South Delhi administration reports that several older buildings in the district are showing signs of age-related structural issues. Community leaders are calling for a fund to support necessary repairs and renovations.",
+    "occurredAt": "2026-09-19T15:10:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/mumbai-tower-sep2026",
+    "text": "A high-rise commercial building in Mumbai's central business district has been closed for structural renovation. Contractors estimate the work will take approximately six months to complete.",
+    "occurredAt": "2026-09-11T12:00:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/bangalore-residential-sep2026",
+    "text": "Bangalore city planners have updated building safety codes for new residential construction. The revised standards are expected to prevent structural failures in future developments.",
+    "occurredAt": "2026-09-10T09:15:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/delhi-traffic-jam-sep2026",
+    "text": "A major traffic jam on Daryaganj Road in Delhi caused delays of over two hours during the morning rush. Multiple accidents were reported, and traffic police worked to clear the congestion.",
+    "occurredAt": "2026-09-20T08:30:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/ipl-cricket-sep2026",
+    "text": "The Indian Premier League cricket match held at Feroz Shah Kotla stadium in Delhi was a thrilling encounter between two major franchises. The home team secured a narrow victory in the final over.",
+    "occurredAt": "2026-09-09T19:45:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/delhi-laxmi-nagar-collapse-sep2026",
+    "text": "A residential building in Laxmi Nagar showed signs of structural failure today. Engineers reported that the main columns have begun to show significant cracks, raising safety concerns for the 45 residents living in the structure.",
+    "occurredAt": "2026-09-15T09:30:00Z"
+  },
+  {
+    "sourceId": "https://news.example.com/hyderabad-construction-sep2026",
+    "text": "Hyderabad's construction industry reported a 15% increase in building permits issued this quarter. New residential complexes are rising across multiple zones in the rapidly developing city.",
+    "occurredAt": "2026-09-08T10:20:00Z"
+  }
+]

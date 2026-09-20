@@ -45,6 +45,17 @@ export const buildings = pgTable("buildings", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Residency is granted by manual review, never by filing Evidence. */
+export const buildingResidents = pgTable(
+  "building_residents",
+  {
+    buildingId: uuid("building_id").notNull().references(() => buildings.id),
+    reporterId: uuid("reporter_id").notNull().references(() => reporters.id),
+    approvedAt: timestamp("approved_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.buildingId, table.reporterId] })],
+);
+
 export const evidence = pgTable("evidence", {
   id: uuid("id").primaryKey().defaultRandom(),
   buildingId: uuid("building_id").notNull().references(() => buildings.id),
@@ -87,17 +98,39 @@ export const assessments = pgTable("assessments", {
   generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
-export const escalations = pgTable("escalations", {
+/** Durable delivery record for assessment requests sent to Inngest. */
+export const assessmentRegenerationOutbox = pgTable("assessment_regeneration_outbox", {
   id: uuid("id").primaryKey().defaultRandom(),
   buildingId: uuid("building_id").notNull().references(() => buildings.id),
-  authority: text("authority").notNull(),
-  snapshot: jsonb("snapshot").notNull(),
-  status: text("status").notNull().default("sent"),
-  externalTicket: text("external_ticket"),
-  sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
-  acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
-  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  eventName: text("event_name").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull().defaultNow(),
+  leaseToken: uuid("lease_token"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  deliveredAt: timestamp("delivered_at", { withTimezone: true }),
+  lastError: text("last_error"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
+
+export const escalations = pgTable(
+  "escalations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    buildingId: uuid("building_id").notNull().references(() => buildings.id),
+    authority: text("authority").notNull(),
+    snapshot: jsonb("snapshot").notNull(),
+    assessmentGeneratedAt: timestamp("assessment_generated_at", { withTimezone: true }),
+    status: text("status").notNull().default("sent"),
+    externalTicket: text("external_ticket"),
+    sentAt: timestamp("sent_at", { withTimezone: true }).notNull().defaultNow(),
+    acknowledgedAt: timestamp("acknowledged_at", { withTimezone: true }),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("escalations_one_per_assessment_authority_idx")
+      .on(table.buildingId, table.authority, table.assessmentGeneratedAt),
+  ],
+);
 
 export const resolutionClaims = pgTable(
   "resolution_claims",
@@ -117,12 +150,31 @@ export const resolutionClaims = pgTable(
   ],
 );
 
-export const areaSignals = pgTable("area_signals", {
-  id: uuid("id").primaryKey().defaultRandom(),
-  geohash: text("geohash").notNull(),
+export const areaSignals = pgTable(
+  "area_signals",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    geohash: text("geohash").notNull(),
+    precision: integer("precision").notNull(),
+    sourceId: text("source_id").notNull(),
+    text: text("text").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    topicId: text("topic_id"),
+    /** Public external provenance. Never points to resident Evidence media. */
+    sourceUrl: text("source_url"),
+    sourceTitle: text("source_title"),
+    mediaUrl: text("media_url"),
+    mediaKind: text("media_kind"),
+  },
+  (table) => [uniqueIndex("area_signals_source_id_idx").on(table.sourceId)],
+);
+
+/** Public prose derived from Signals for one cell. Never contains raw post text. */
+export const cellSummaries = pgTable("cell_summaries", {
+  geohash: text("geohash").primaryKey(),
   precision: integer("precision").notNull(),
-  sourceId: text("source_id").notNull(),
-  text: text("text").notNull(),
-  occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  summary: text("summary").notNull(),
+  signalCount: integer("signal_count").notNull(),
+  generatedAt: timestamp("generated_at", { withTimezone: true }).notNull().defaultNow(),
 });

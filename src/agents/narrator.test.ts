@@ -4,7 +4,7 @@ const converseForTool = vi.hoisted(() => vi.fn());
 
 vi.mock("./bedrock.js", () => ({ converseForTool }));
 
-import { narrateAssessment } from "./narrator.js";
+import { narrateAssessment, narrateCellSummary } from "./narrator.js";
 
 describe("narrateAssessment", () => {
   beforeEach(() => {
@@ -60,5 +60,57 @@ describe("narrateAssessment", () => {
         ranked: [],
       }),
     ).rejects.toThrow(/empty assessment/i);
+  });
+});
+
+describe("narrateCellSummary", () => {
+  beforeEach(() => {
+    converseForTool.mockReset();
+    converseForTool.mockResolvedValue({ summary: "  A calm area summary.  " });
+  });
+
+  it("includes the locality label and topic counts, and forces write_cell_summary", async () => {
+    await expect(
+      narrateCellSummary({
+        localityLabel: "Laxmi Nagar",
+        topics: [
+          { topicId: "load_bearing_crack", count: 3 },
+          { topicId: "other", count: 1 },
+        ],
+        signalCount: 4,
+      }),
+    ).resolves.toBe("A calm area summary.");
+
+    const request = converseForTool.mock.calls[0]?.[0] as {
+      system: string;
+      prompt: string;
+      tool: { name: string; inputSchema: Record<string, unknown> };
+    };
+    expect(request.prompt).toContain("Laxmi Nagar");
+    expect(request.prompt).toContain("Cracking in a load-bearing wall");
+    expect(request.prompt).toContain("3");
+    expect(request.prompt).toContain("other");
+    expect(request.prompt).toContain("1");
+    expect(request.prompt).toContain("4");
+    expect(request.tool.name).toBe("write_cell_summary");
+    expect(request.tool.inputSchema).toMatchObject({
+      required: ["summary"],
+      additionalProperties: false,
+    });
+    expect(request.system).toMatch(/never state or infer a numeric score/i);
+    expect(request.system).toMatch(/unverified/i);
+    expect(request.system).toMatch(/never.*evacuate/i);
+    expect(request.system).toMatch(/never name a specific building or address/i);
+  });
+
+  it("rejects a whitespace-only generated summary", async () => {
+    converseForTool.mockResolvedValueOnce({ summary: "   " });
+    await expect(
+      narrateCellSummary({
+        localityLabel: "Laxmi Nagar",
+        topics: [],
+        signalCount: 0,
+      }),
+    ).rejects.toThrow(/empty/i);
   });
 });

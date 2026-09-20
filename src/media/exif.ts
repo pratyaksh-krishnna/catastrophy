@@ -44,7 +44,7 @@ export async function readExifLocation(buf: Buffer | Uint8Array): Promise<LatLon
  * bakes the EXIF orientation into the output pixels before that metadata goes.
  */
 export async function stripExif(buf: Buffer | Uint8Array): Promise<Buffer> {
-  return sharp(buf).rotate().toBuffer();
+  return sharp(buf).rotate().jpeg({ quality: 85 }).toBuffer();
 }
 
 function haversineM(a: LatLon, b: LatLon): number {

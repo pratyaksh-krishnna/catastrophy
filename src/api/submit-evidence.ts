@@ -10,7 +10,7 @@ import type { GeoAgreement, SourceClass } from "../domain/confidence";
 import { HAZARD_TYPE_IDS, type HazardTypeId } from "../domain/hazard-catalogue";
 import { compareLocations, readExifLocation, type LatLon } from "../media/exif";
 import { storeEvidenceMedia } from "../media/upload";
-import { requestRegeneration } from "../pipeline/regenerate";
+import { isUrgent, dispatchPendingRegenerations } from "../pipeline/regenerate";
 
 export interface SubmitEvidenceInput {
   reporterId?: string | undefined;
@@ -18,9 +18,11 @@ export interface SubmitEvidenceInput {
   note: string;
   sourceClass: SourceClass;
   deviceLocation: LatLon;
+  buildingLocation?: LatLon | undefined;
   capturedAt: Date;
   buildingId?: string | undefined;
   media?: Buffer | undefined;
+  mediaType?: "image/jpeg" | "image/png" | "image/webp" | undefined;
   confirmLocation?: boolean | undefined;
 }
 
@@ -70,6 +72,8 @@ export async function resolvePseudonymousReporter(candidateId?: string): Promise
 export function validateEvidenceInput(input: SubmitEvidenceInput): void {
   if (!input.addressText.trim()) throw new EvidenceInputError("Building address is required");
   if (!input.note.trim()) throw new EvidenceInputError("Please describe what you observed");
+  if (input.addressText.length > 300) throw new EvidenceInputError("Building address is too long");
+  if (input.note.length > 2_000) throw new EvidenceInputError("Evidence description is too long");
   if (!SOURCE_CLASSES.has(input.sourceClass)) throw new EvidenceInputError("Unsupported source class");
   if (
     !Number.isFinite(input.deviceLocation.lat) ||
@@ -82,6 +86,13 @@ export function validateEvidenceInput(input: SubmitEvidenceInput): void {
     throw new EvidenceInputError("A valid device location is required");
   }
   if (Number.isNaN(input.capturedAt.getTime())) throw new EvidenceInputError("Captured time is invalid");
+  if (input.buildingId && !UUID.test(input.buildingId)) throw new EvidenceInputError("Invalid Building id");
+  if (input.buildingLocation) {
+    const { lat, lon } = input.buildingLocation;
+    if (!Number.isFinite(lat) || !Number.isFinite(lon) || lat < 28.4 || lat > 28.9 || lon < 76.8 || lon > 77.4) {
+      throw new EvidenceInputError("Pin the Building within the Delhi map area");
+    }
+  }
 }
 
 /**
@@ -91,9 +102,10 @@ export function validateEvidenceInput(input: SubmitEvidenceInput): void {
 export async function submitEvidence(input: SubmitEvidenceInput): Promise<SubmitEvidenceResult> {
   validateEvidenceInput(input);
 
+  const buildingPoint = input.buildingLocation ?? input.deviceLocation;
   const buildingId = input.buildingId ?? (await resolveOrCreateBuilding({
-    lat: input.deviceLocation.lat,
-    lon: input.deviceLocation.lon,
+    lat: buildingPoint.lat,
+    lon: buildingPoint.lon,
     addressText: input.addressText.trim(),
   })).id;
 
@@ -102,7 +114,10 @@ export async function submitEvidence(input: SubmitEvidenceInput): Promise<Submit
     input.deviceLocation.lat,
     input.deviceLocation.lon,
   );
-  const needsLocationConfirmation = distance > LOCATION_CONFIRM_RADIUS_M;
+  // Local development can exercise the Delhi reporting flow from elsewhere.
+  // Keep the distance check and confirmation in test/production environments.
+  const needsLocationConfirmation =
+    process.env.NODE_ENV !== "development" && distance > LOCATION_CONFIRM_RADIUS_M;
 
   // Stop before media storage, model calls, or Evidence/Hazard writes. A second,
   // explicit request is required to confirm the distant claimed Building.
@@ -122,7 +137,7 @@ export async function submitEvidence(input: SubmitEvidenceInput): Promise<Submit
   const exifLocation = input.media ? await readExifLocation(input.media) : null;
   const geoAgreement = compareLocations(input.deviceLocation, exifLocation);
   const mediaKeys = input.media
-    ? await storeEvidenceMedia(input.media, `${buildingId}/${crypto.randomUUID()}.jpg`)
+    ? await storeEvidenceMedia(input.media, `${buildingId}/${crypto.randomUUID()}`, input.mediaType ?? "image/jpeg")
     : null;
 
   const classification = await classifyEvidence({
@@ -132,7 +147,8 @@ export async function submitEvidence(input: SubmitEvidenceInput): Promise<Submit
   const allowed = new Set<string>(HAZARD_TYPE_IDS);
   const hazardTypeIds = [...new Set(classification.hazardTypeIds.filter((id) => allowed.has(id)))];
 
-  const evidence = await db.execute(sql`
+  const evidenceId = await db.transaction(async (tx) => {
+    const evidence = await tx.execute(sql`
     INSERT INTO evidence (
       building_id, reporter_id, source_class, note, captured_at,
       device_location, exif_location, geo_agreement, s3_key_original, s3_key_public
@@ -152,26 +168,48 @@ export async function submitEvidence(input: SubmitEvidenceInput): Promise<Submit
       ${mediaKeys?.publicKey ?? null}
     )
     RETURNING id
-  `);
-  const evidenceId = evidence.rows[0]!.id as string;
+    `);
+    const evidenceId = evidence.rows[0]!.id as string;
 
-  for (const typeId of hazardTypeIds) {
-    const hazard = await db.execute(sql`
+    for (const typeId of hazardTypeIds) {
+      const hazard = await tx.execute(sql`
       INSERT INTO hazards (building_id, type_id)
       VALUES (${buildingId}, ${typeId})
       ON CONFLICT (building_id, type_id)
       DO UPDATE SET status = 'open', resolved_at = NULL
       RETURNING id
-    `);
-    await db.execute(sql`
+      `);
+      await tx.execute(sql`
       INSERT INTO evidence_hazards (evidence_id, hazard_id)
       VALUES (${evidenceId}, ${hazard.rows[0]!.id})
       ON CONFLICT DO NOTHING
-    `);
-  }
+      `);
+    }
 
-  // Assessment generation is intentionally never done in the request path.
-  await requestRegeneration({ buildingId, hazardTypeIds });
+    const eventName = isUrgent(hazardTypeIds)
+      ? "assessment/regenerate.urgent"
+      : "assessment/regenerate";
+    await tx.execute(sql`
+      INSERT INTO assessment_regeneration_outbox (building_id, event_name)
+      VALUES (${buildingId}, ${eventName})
+      ON CONFLICT (building_id) WHERE delivered_at IS NULL
+      DO UPDATE SET
+        event_name = CASE
+          WHEN EXCLUDED.event_name = 'assessment/regenerate.urgent' THEN EXCLUDED.event_name
+          ELSE assessment_regeneration_outbox.event_name
+        END,
+        next_attempt_at = now(),
+        lease_token = NULL,
+        lease_until = NULL
+    `);
+    return evidenceId;
+  });
+
+  // The durable outbox lets delivery retry without asking the Reporter to submit
+  // again. Its failure must not turn the committed Evidence into a 500.
+  void dispatchPendingRegenerations({ buildingId }).catch((error: unknown) => {
+    console.error("Assessment regeneration dispatch failed", { buildingId, error });
+  });
 
   return {
     evidenceId,

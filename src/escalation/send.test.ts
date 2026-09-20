@@ -107,6 +107,26 @@ describe("sendEscalation", () => {
     );
   });
 
+  it("sends each authority only once for one generated Assessment", async () => {
+    const building = await resolveOrCreateBuilding({
+      ...randomPoint(),
+      addressText: `I${Math.random().toString(36).slice(2, 10)} Marg`,
+    });
+    const assessment = {
+      buildingId: building.id,
+      score: 0.82,
+      alertLevel: "critical" as const,
+      narrative: "A serious Hazard is on record.",
+      ranked: [{ typeId: "column_failure" as const, confidence: 0.9 }],
+      generatedAt: new Date(),
+    };
+    const first = await sendEscalation({ buildingId: building.id, addressText: "Test", assessment });
+    const second = await sendEscalation({ buildingId: building.id, addressText: "Test", assessment });
+    expect(first).toHaveLength(2);
+    expect(second).toEqual([]);
+    expect(sesSend).toHaveBeenCalledTimes(2);
+  });
+
   it("records the hand-filed ticket and authority acknowledgement", async () => {
     const tag = `T${Math.random().toString(36).slice(2, 10)}`;
     const building = await resolveOrCreateBuilding({

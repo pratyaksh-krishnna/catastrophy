@@ -8,13 +8,14 @@
   },
   "scripts": {
     "dev": "next dev",
+    "dev:inngest": "npx --yes --ignore-scripts=false inngest-cli@1.45.1 dev --no-discovery -u http://localhost:3000/api/inngest",
     "build": "next build",
     "start": "next start",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:migrate": "node scripts/migrate.mjs",
+    "db:migrate:test": "node scripts/migrate.mjs --test"
   },
   "repository": {
     "type": "git",
