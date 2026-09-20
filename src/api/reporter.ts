@@ -1,10 +1,14 @@
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from "node:crypto";
 
 /** Pseudonymous identity shared by submission and Evidence-status boundaries. */
 export const REPORTER_COOKIE = "catastrophy_reporter";
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const developmentSecret = randomBytes(32).toString("hex");
+// Next can evaluate this module separately for a Route Handler and a Server
+// Component. A randomly generated module-local fallback therefore signs a
+// cookie that the receipt page cannot verify. This value is intentionally only
+// available outside production; deployed environments must provide a secret.
+const DEVELOPMENT_SESSION_SECRET = "catastrophy-development-reporter-session-secret-v1";
 
 function secret(): string {
   const configured = process.env.REPORTER_SESSION_SECRET;
@@ -12,7 +16,7 @@ function secret(): string {
   if (process.env.NODE_ENV === "production") {
     throw new Error("REPORTER_SESSION_SECRET must contain at least 32 characters");
   }
-  return developmentSecret;
+  return DEVELOPMENT_SESSION_SECRET;
 }
 
 function signature(reporterId: string): string {

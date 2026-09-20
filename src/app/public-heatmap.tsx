@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import * as maplibregl from "maplibre-gl";
 import type { GeoJSONSource, Map as MapLibreMap } from "maplibre-gl";
 import ngeohash from "ngeohash";
+import { buildSignalPopupHtml, type PublicSignalCell } from "./signal-cells";
 
 interface PublicCell {
   geohash: string;
@@ -16,37 +17,90 @@ interface HeatmapResponse {
   error?: string;
 }
 
+interface SignalsResponse {
+  cells?: PublicSignalCell[];
+  error?: string;
+}
+
+const SIGNAL_HALO_LAYER_ID = "public-signals-halo";
+const SIGNAL_CORE_LAYER_ID = "public-signals-core";
+const HEATMAP_LAYER_ID = "public-heatmap-density";
+const HEATMAP_HALO_LAYER_ID = "public-heatmap-cell-halo";
+
+function cellCenter(geohash: string) {
+  const [minLat, minLon, maxLat, maxLon] = ngeohash.decode_bbox(geohash);
+  return [(minLon + maxLon) / 2, (minLat + maxLat) / 2] as [number, number];
+}
+
 function featureCollection(cells: PublicCell[]) {
   return {
     type: "FeatureCollection" as const,
     features: cells.map((cell) => {
-      const [minLat, minLon, maxLat, maxLon] = ngeohash.decode_bbox(cell.geohash);
       return {
         type: "Feature" as const,
         properties: { intensity: cell.intensity, precision: cell.precision },
         geometry: {
-          type: "Polygon" as const,
-          coordinates: [[
-            [minLon, minLat],
-            [maxLon, minLat],
-            [maxLon, maxLat],
-            [minLon, maxLat],
-            [minLon, minLat],
-          ]],
+          type: "Point" as const,
+          coordinates: cellCenter(cell.geohash),
         },
       };
     }),
   };
 }
 
+function signalFeatureCollection(cells: PublicSignalCell[]) {
+  return {
+    type: "FeatureCollection" as const,
+    features: cells.map((cell) => ({
+      type: "Feature" as const,
+      properties: {
+        signalCount: cell.signalCount,
+        summary: cell.summary,
+        // Keep the public source cards attached to the privacy cell feature so
+        // clicking the marker can render them without any coordinate detail.
+        sources: cell.sources,
+      },
+      geometry: { type: "Point" as const, coordinates: cellCenter(cell.geohash) },
+    })),
+  };
+}
+
 export function PublicHeatmap() {
   const container = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapLibreMap | null>(null);
+  const popupRef = useRef<maplibregl.Popup | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "empty" | "error">("loading");
+  const [signalsVisible, setSignalsVisible] = useState(true);
+  const signalsVisibleRef = useRef(signalsVisible);
+
+  // Kept in a ref so the mount effect below (which only runs once) can read
+  // the latest toggle value at the moment the signal layers are first
+  // created, without needing map setup to depend on `signalsVisible`.
+  signalsVisibleRef.current = signalsVisible;
+
+  // Applies toggle changes to already-created layers. Reading the Building
+  // heat layer is untouched by this — it has no visibility toggle.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    const visibility = signalsVisible ? "visible" : "none";
+    for (const layerId of [SIGNAL_HALO_LAYER_ID, SIGNAL_CORE_LAYER_ID]) {
+      if (map.getLayer(layerId)) {
+        map.setLayoutProperty(layerId, "visibility", visibility);
+      }
+    }
+    if (!signalsVisible) {
+      popupRef.current?.remove();
+    }
+  }, [signalsVisible]);
 
   useEffect(() => {
     if (!container.current) return;
 
+    // Next bundles MapLibre's module URL into a chunk, so its default worker
+    // URL points at a non-existent chunk path. Serve the matching worker as a
+    // public asset so GeoJSON sources can be indexed and rendered.
+    maplibregl.setWorkerUrl("/maplibre/maplibre-gl-worker.mjs");
     const map = new maplibregl.Map({
       container: container.current,
       // Keep the style document local so the map still initializes when a
@@ -63,12 +117,17 @@ export function PublicHeatmap() {
           },
         },
         layers: [
-          { id: "paper", type: "background", paint: { "background-color": "#d8ddd1" } },
+          { id: "paper", type: "background", paint: { "background-color": "#111a19" } },
           {
             id: "openstreetmap",
             type: "raster",
             source: "openstreetmap",
-            paint: { "raster-opacity": 0.72, "raster-saturation": -0.72 },
+            paint: {
+              "raster-opacity": 0.56,
+              "raster-saturation": -0.92,
+              "raster-brightness-min": 0.12,
+              "raster-brightness-max": 0.68,
+            },
           },
         ],
       },
@@ -110,36 +169,69 @@ export function PublicHeatmap() {
         if (source) {
           source.setData(data);
         } else {
-          map.addSource("public-heat", { type: "geojson", data });
-          map.addLayer({
-            id: "public-heat-halo",
-            type: "fill",
-            source: "public-heat",
-            paint: {
-              "fill-color": [
-                "interpolate", ["linear"], ["get", "intensity"],
-                0, "#f8cb7b", 0.45, "#eb7159", 1, "#802a3a",
-              ],
-              "fill-opacity": 0.2,
-              "fill-outline-color": "rgba(255,255,255,0.48)",
-            },
+          // Register the source before its first payload. This lets the style
+          // attach the source cache and layers before the worker receives the
+          // GeoJSON, which is more reliable during the map's initial load.
+          map.addSource("public-heat", {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
           });
           map.addLayer({
-            id: "public-heat-core",
-            type: "fill",
+            id: HEATMAP_LAYER_ID,
+            type: "heatmap",
             source: "public-heat",
             paint: {
-              "fill-color": [
+              "heatmap-weight": [
                 "interpolate", ["linear"], ["get", "intensity"],
-                0, "#f5bd61", 0.45, "#d94b46", 1, "#5c172c",
+                0, 0.45, 1, 1,
               ],
-              "fill-opacity": [
-                "interpolate", ["linear"], ["get", "intensity"],
-                0, 0.38, 1, 0.78,
+              "heatmap-intensity": [
+                "interpolate", ["linear"], ["zoom"],
+                8, 0.72, 10, 0.95, 12, 1.15, 15, 1.3,
               ],
-              "fill-outline-color": "rgba(255,255,255,0.7)",
+              "heatmap-radius": [
+                "interpolate", ["linear"], ["zoom"],
+                8, 36, 10, 46, 12, 60, 15, 82,
+              ],
+              "heatmap-color": [
+                "interpolate", ["linear"], ["heatmap-density"],
+                0, "rgba(0,0,0,0)",
+                0.12, "rgba(31,133,104,0.34)",
+                0.32, "#5faf70",
+                0.52, "#d5bf4b",
+                0.72, "#dc8740",
+                0.9, "#cf4f42",
+                1, "#8f2938",
+              ],
+              "heatmap-opacity": 0.72,
             },
           });
+          // The density field communicates neighbourhood scale. A single,
+          // diffuse bloom gives sparse privacy cells form while keeping
+          // attention on the reporting area, never a centre-point location.
+          map.addLayer({
+            id: HEATMAP_HALO_LAYER_ID,
+            type: "circle",
+            source: "public-heat",
+            paint: {
+              "circle-color": [
+                "interpolate", ["linear"], ["get", "intensity"],
+                0, "#318a70", 0.48, "#d4b54b", 0.76, "#d86d3f", 1, "#9d3040",
+              ],
+              "circle-radius": [
+                "*",
+                ["interpolate", ["linear"], ["zoom"], 8, 22, 10, 29, 12, 38, 15, 56],
+                ["interpolate", ["linear"], ["get", "intensity"], 0, 0.75, 1, 1.15],
+              ],
+              "circle-opacity": [
+                "interpolate", ["linear"], ["get", "intensity"],
+                0, 0.08, 0.55, 0.18, 1, 0.3,
+              ],
+              "circle-blur": 0.85,
+            },
+          });
+          (map.getSource("public-heat") as GeoJSONSource).setData(data);
+          map.triggerRepaint();
         }
         setState(cells.length === 0 ? "empty" : "ready");
       } catch (error) {
@@ -151,8 +243,127 @@ export function PublicHeatmap() {
     map.once("load", loadCells);
     map.on("moveend", loadCells);
 
+    // Area Signals: a second, independently-fetched layer. A failure here
+    // must never blank the Building heat layer above (and vice versa), so
+    // this has its own abort controller, its own try/catch, and never
+    // touches `state`, `abortController`, `public-heat`, or the layers
+    // added by loadCells().
+    let signalsAbortController: AbortController | undefined;
+
+    async function loadSignalCells() {
+      signalsAbortController?.abort();
+      signalsAbortController = new AbortController();
+
+      try {
+        const response = await fetch("/api/signals", {
+          signal: signalsAbortController.signal,
+          headers: { Accept: "application/json" },
+        });
+        const body = await response.json() as SignalsResponse;
+        if (!response.ok) throw new Error(body.error ?? "Signals unavailable");
+        const cells = body.cells ?? [];
+        const data = signalFeatureCollection(cells);
+        const source = map.getSource("public-signals") as GeoJSONSource | undefined;
+
+        if (source) {
+          source.setData(data);
+        } else {
+          map.addSource("public-signals", {
+            type: "geojson",
+            data: { type: "FeatureCollection", features: [] },
+          });
+          const initialVisibility = signalsVisibleRef.current ? "visible" : "none";
+          // Signals use a cool ring and a small core so unverified media/social
+          // reports remain visually distinct from the resident heat layer.
+          map.addLayer({
+            id: SIGNAL_HALO_LAYER_ID,
+            type: "circle",
+            source: "public-signals",
+            layout: { visibility: initialVisibility },
+            paint: {
+              "circle-color": "#6289c4",
+              "circle-radius": [
+                "interpolate", ["linear"], ["zoom"],
+                8, 26, 12, 39, 15, 52,
+              ],
+              "circle-opacity": 0.28,
+              "circle-blur": 0.78,
+            },
+          });
+          map.addLayer({
+            id: SIGNAL_CORE_LAYER_ID,
+            type: "circle",
+            source: "public-signals",
+            layout: { visibility: initialVisibility },
+            paint: {
+              "circle-color": "#5279b1",
+              "circle-radius": [
+                "interpolate", ["linear"], ["zoom"],
+                8, 7, 12, 11, 15, 16,
+              ],
+              "circle-opacity": 0.72,
+              "circle-stroke-color": "rgba(235,243,255,0.88)",
+              "circle-stroke-width": [
+                "interpolate", ["linear"], ["zoom"],
+                8, 0.7, 12, 1, 15, 1.35,
+              ],
+            },
+          });
+
+          map.on("click", SIGNAL_CORE_LAYER_ID, (event) => {
+            const feature = event.features?.[0];
+            if (!feature) return;
+            const properties = (feature.properties ?? {}) as {
+              signalCount?: number;
+              summary?: string | null;
+              sources?: unknown;
+            };
+            let sources: unknown[] = [];
+            if (Array.isArray(properties.sources)) {
+              sources = properties.sources;
+            } else if (typeof properties.sources === "string") {
+              try {
+                const parsed: unknown = JSON.parse(properties.sources);
+                if (Array.isArray(parsed)) sources = parsed;
+              } catch {
+                // MapLibre serializes arrays in feature properties. A malformed
+                // value should simply leave the popup without source cards.
+              }
+            }
+            popupRef.current?.remove();
+            popupRef.current = new maplibregl.Popup({ closeButton: true, maxWidth: "340px" })
+              .setLngLat(event.lngLat)
+              .setHTML(
+                buildSignalPopupHtml({
+                  signalCount: Number(properties.signalCount ?? 0),
+                  summary: properties.summary ?? null,
+                  sources,
+                } as Parameters<typeof buildSignalPopupHtml>[0]),
+              )
+              .addTo(map);
+          });
+          map.on("mouseenter", SIGNAL_CORE_LAYER_ID, () => {
+            map.getCanvas().style.cursor = "pointer";
+          });
+          map.on("mouseleave", SIGNAL_CORE_LAYER_ID, () => {
+            map.getCanvas().style.cursor = "";
+          });
+          (map.getSource("public-signals") as GeoJSONSource).setData(data);
+          map.triggerRepaint();
+        }
+      } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") return;
+        // Signals are best-effort: the Building heat layer keeps working.
+        console.error("Signals layer unavailable", error);
+      }
+    }
+
+    map.once("load", loadSignalCells);
+
     return () => {
       abortController?.abort();
+      signalsAbortController?.abort();
+      popupRef.current?.remove();
       map.remove();
       mapRef.current = null;
     };
@@ -173,10 +384,33 @@ export function PublicHeatmap() {
         <span className="privacy-mark" aria-hidden="true">⌁</span>
         <span><strong>Heat, never pins.</strong> Sparse areas are hidden automatically.</span>
       </div>
-      <div className="map-legend" aria-label="Heat intensity legend">
-        <span>Lower signal</span>
+      <aside className="map-layer-panel" aria-label="Map data layers">
+        <div className="map-layer-heading">
+          <span>Reading the map</span>
+          <span className="map-layer-live"><i aria-hidden="true" /> Live</span>
+        </div>
+        <div className="map-layer-item">
+          <i className="map-swatch map-swatch--heat" aria-hidden="true" />
+          <span><strong>Resident evidence</strong><small>Verified reports, grouped by area</small></span>
+        </div>
+        <div className="map-layer-item">
+          <i className="map-swatch map-swatch--signal" aria-hidden="true" />
+          <span><strong>Area signals</strong><small>Media and social reports</small></span>
+        </div>
+        <button
+          className="map-layer-toggle"
+          type="button"
+          aria-pressed={signalsVisible}
+          onClick={() => setSignalsVisible((visible) => !visible)}
+        >
+          <span className={`map-toggle-track${signalsVisible ? " map-toggle-track--active" : ""}`} aria-hidden="true"><i /></span>
+          <span>{signalsVisible ? "Area signals shown" : "Area signals hidden"}</span>
+        </button>
+      </aside>
+      <div className="map-intensity" aria-label="Heat intensity legend">
+        <span>Lower</span>
         <i aria-hidden="true" />
-        <span>Higher signal</span>
+        <span>Higher</span>
       </div>
     </div>
   );

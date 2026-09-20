@@ -32,7 +32,7 @@ export default async function EvidencePage({ params }: { params: Promise<{ id: s
         )}
         <Link className="status-home-link" href="/">Return to the public map</Link>
       </section>
-      {evidence.status === "processing" && <StatusRefresh />}
+      {evidence.status === "processing" && <StatusRefresh evidenceId={evidence.evidenceId} />}
     </main>
   );
 }

@@ -12,10 +12,10 @@ vi.mock("../agents/classifier.js", () => ({
 vi.mock("../media/upload.js", () => ({
   storeEvidenceMedia: vi.fn(async () => ({ originalKey: "original/x", publicKey: "public/x" })),
 }));
-const { regenerate } = vi.hoisted(() => ({ regenerate: vi.fn(async () => {}) }));
+const { dispatch } = vi.hoisted(() => ({ dispatch: vi.fn(async () => {}) }));
 vi.mock("../pipeline/regenerate.js", async (original) => ({
   ...(await original<typeof import("../pipeline/regenerate.js")>()),
-  requestRegeneration: regenerate,
+  dispatchPendingRegenerations: dispatch,
 }));
 
 afterAll(async () => { await pool.end(); });
@@ -51,7 +51,7 @@ describe("submitEvidence", () => {
     const shared = base();
     const first = await submitEvidence({ ...shared, reporterId: await reporter() });
     const before = await db.execute(sql`SELECT count(*)::int AS n FROM evidence WHERE building_id = ${first.buildingId}`);
-    regenerate.mockClear();
+    dispatch.mockClear();
     const second = await submitEvidence({
       ...shared,
       reporterId: await reporter(),
@@ -60,7 +60,7 @@ describe("submitEvidence", () => {
     });
     expect(second.needsLocationConfirmation).toBe(true);
     expect(second.evidenceId).toBeNull();
-    expect(regenerate).not.toHaveBeenCalled();
+    expect(dispatch).not.toHaveBeenCalled();
     const after = await db.execute(sql`SELECT count(*)::int AS n FROM evidence WHERE building_id = ${first.buildingId}`);
     expect(after.rows[0]!.n).toBe(before.rows[0]!.n);
 
@@ -94,8 +94,28 @@ describe("submitEvidence", () => {
   });
 
   it("queues regeneration instead of building an Assessment in the request", async () => {
-    regenerate.mockClear();
+    dispatch.mockClear();
     await submitEvidence({ ...base(), reporterId: await reporter() });
-    expect(regenerate).toHaveBeenCalledOnce();
+    expect(dispatch).toHaveBeenCalledOnce();
+  });
+
+  it("keeps a recorded Evidence successful when dispatch is unavailable", async () => {
+    dispatch.mockRejectedValueOnce(new Error("Inngest is unavailable"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const result = await submitEvidence({ ...base(), reporterId: await reporter() });
+      expect(result.evidenceId).toBeTruthy();
+      await vi.waitFor(() => expect(error).toHaveBeenCalledOnce());
+      const persisted = await db.execute(sql`SELECT id FROM evidence WHERE id = ${result.evidenceId!}`);
+      expect(persisted.rows).toHaveLength(1);
+      const outbox = await db.execute(sql`
+        SELECT delivered_at
+        FROM assessment_regeneration_outbox
+        WHERE building_id = ${result.buildingId} AND delivered_at IS NULL
+      `);
+      expect(outbox.rows).toHaveLength(1);
+    } finally {
+      error.mockRestore();
+    }
   });
 });

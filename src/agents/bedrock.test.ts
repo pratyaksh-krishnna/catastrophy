@@ -17,7 +17,7 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => ({
   },
 }));
 
-import { converseForTool, modelId, type ToolSpec } from "./bedrock.js";
+import { converseForTool, modelId, TOOL_CALL_ATTEMPTS, type ToolSpec } from "./bedrock.js";
 
 const tool: ToolSpec = {
   name: "record_result",
@@ -89,6 +89,28 @@ describe("bedrock adapter", () => {
     expect(command.input.toolConfig.toolChoice).toEqual({ tool: { name: tool.name } });
   });
 
+  it.each([
+    ["global.anthropic.claude-sonnet-4-6", { thinking: { type: "adaptive" } }],
+    ["anthropic.claude-opus-5", { thinking: { type: "adaptive" } }],
+    ["openai.gpt-oss-120b-1:0", undefined],
+  ])("sends adaptive thinking only to Anthropic models (%s)", async (model, expected) => {
+    process.env.MODEL = model;
+    sdk.send.mockResolvedValueOnce({
+      output: {
+        message: {
+          content: [{ toolUse: { name: tool.name, toolUseId: "tool-1", input: { value: "ok" } } }],
+        },
+      },
+    });
+
+    await converseForTool({ system: "system", prompt: "prompt", tool });
+
+    const command = sdk.send.mock.calls[0]![0] as {
+      input: { additionalModelRequestFields?: unknown };
+    };
+    expect(command.input.additionalModelRequestFields).toEqual(expected);
+  });
+
   it("rejects a tool call with a different name", async () => {
     process.env.MODEL = "test-model";
     sdk.send.mockResolvedValueOnce({
@@ -110,6 +132,47 @@ describe("bedrock adapter", () => {
     await expect(
       converseForTool({ system: "system", prompt: "prompt", tool }),
     ).rejects.toThrow(/did not call record_result/);
+  });
+
+  it("retries when the model answers without calling the tool", async () => {
+    process.env.MODEL = "test-model";
+    sdk.send.mockResolvedValueOnce({
+      output: { message: { content: [{ text: "prose instead of a tool call" }] } },
+    });
+    sdk.send.mockResolvedValueOnce({
+      output: {
+        message: {
+          content: [{ toolUse: { name: tool.name, toolUseId: "tool-1", input: { value: "ok" } } }],
+        },
+      },
+    });
+
+    await expect(
+      converseForTool<{ value: string }>({ system: "system", prompt: "prompt", tool }),
+    ).resolves.toEqual({ value: "ok" });
+    expect(sdk.send).toHaveBeenCalledTimes(2);
+  });
+
+  it("gives up after the attempt limit", async () => {
+    process.env.MODEL = "test-model";
+    sdk.send.mockResolvedValue({
+      output: { message: { content: [{ text: "prose every time" }] } },
+    });
+
+    await expect(
+      converseForTool({ system: "system", prompt: "prompt", tool }),
+    ).rejects.toThrow(/did not call record_result/);
+    expect(sdk.send).toHaveBeenCalledTimes(TOOL_CALL_ATTEMPTS);
+  });
+
+  it("does not retry a transport failure", async () => {
+    process.env.MODEL = "test-model";
+    sdk.send.mockRejectedValueOnce(new Error("ThrottlingException"));
+
+    await expect(
+      converseForTool({ system: "system", prompt: "prompt", tool }),
+    ).rejects.toThrow(/ThrottlingException/);
+    expect(sdk.send).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a response without tool input", async () => {

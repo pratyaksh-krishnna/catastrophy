@@ -57,4 +57,9 @@ describe("assessment regeneration triggers", () => {
       timeout: "5m",
     });
   });
+
+  it("registers a one-minute retry for durable pending dispatches", () => {
+    const config = functionConfigs.find((candidate) => candidate.id === "retry-pending-assessment-regenerations");
+    expect(config?.triggers).toEqual([{ cron: "*/1 * * * *" }]);
+  });
 });

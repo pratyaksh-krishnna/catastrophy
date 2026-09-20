@@ -10,7 +10,7 @@ import type { GeoAgreement, SourceClass } from "../domain/confidence";
 import { HAZARD_TYPE_IDS, type HazardTypeId } from "../domain/hazard-catalogue";
 import { compareLocations, readExifLocation, type LatLon } from "../media/exif";
 import { storeEvidenceMedia } from "../media/upload";
-import { requestRegeneration } from "../pipeline/regenerate";
+import { isUrgent, dispatchPendingRegenerations } from "../pipeline/regenerate";
 
 export interface SubmitEvidenceInput {
   reporterId?: string | undefined;
@@ -144,7 +144,8 @@ export async function submitEvidence(input: SubmitEvidenceInput): Promise<Submit
   const allowed = new Set<string>(HAZARD_TYPE_IDS);
   const hazardTypeIds = [...new Set(classification.hazardTypeIds.filter((id) => allowed.has(id)))];
 
-  const evidence = await db.execute(sql`
+  const evidenceId = await db.transaction(async (tx) => {
+    const evidence = await tx.execute(sql`
     INSERT INTO evidence (
       building_id, reporter_id, source_class, note, captured_at,
       device_location, exif_location, geo_agreement, s3_key_original, s3_key_public
@@ -164,26 +165,48 @@ export async function submitEvidence(input: SubmitEvidenceInput): Promise<Submit
       ${mediaKeys?.publicKey ?? null}
     )
     RETURNING id
-  `);
-  const evidenceId = evidence.rows[0]!.id as string;
+    `);
+    const evidenceId = evidence.rows[0]!.id as string;
 
-  for (const typeId of hazardTypeIds) {
-    const hazard = await db.execute(sql`
+    for (const typeId of hazardTypeIds) {
+      const hazard = await tx.execute(sql`
       INSERT INTO hazards (building_id, type_id)
       VALUES (${buildingId}, ${typeId})
       ON CONFLICT (building_id, type_id)
       DO UPDATE SET status = 'open', resolved_at = NULL
       RETURNING id
-    `);
-    await db.execute(sql`
+      `);
+      await tx.execute(sql`
       INSERT INTO evidence_hazards (evidence_id, hazard_id)
       VALUES (${evidenceId}, ${hazard.rows[0]!.id})
       ON CONFLICT DO NOTHING
-    `);
-  }
+      `);
+    }
 
-  // Assessment generation is intentionally never done in the request path.
-  await requestRegeneration({ buildingId, hazardTypeIds });
+    const eventName = isUrgent(hazardTypeIds)
+      ? "assessment/regenerate.urgent"
+      : "assessment/regenerate";
+    await tx.execute(sql`
+      INSERT INTO assessment_regeneration_outbox (building_id, event_name)
+      VALUES (${buildingId}, ${eventName})
+      ON CONFLICT (building_id) WHERE delivered_at IS NULL
+      DO UPDATE SET
+        event_name = CASE
+          WHEN EXCLUDED.event_name = 'assessment/regenerate.urgent' THEN EXCLUDED.event_name
+          ELSE assessment_regeneration_outbox.event_name
+        END,
+        next_attempt_at = now(),
+        lease_token = NULL,
+        lease_until = NULL
+    `);
+    return evidenceId;
+  });
+
+  // The durable outbox lets delivery retry without asking the Reporter to submit
+  // again. Its failure must not turn the committed Evidence into a 500.
+  void dispatchPendingRegenerations({ buildingId }).catch((error: unknown) => {
+    console.error("Assessment regeneration dispatch failed", { buildingId, error });
+  });
 
   return {
     evidenceId,
